@@ -98,3 +98,9 @@ class TestTeamNormalizer:
         assert normalize_team_name("Man United", "E0") != normalize_team_name("Man City", "E0")
         assert normalize_team_name("Man United", "E0") == "Manchester Utd"
         assert normalize_team_name("Man City", "E0") == "Manchester City"
+
+    def test_normalize_ipswich(self):
+        assert normalize_team_name("Ipswich", "E0") == "Ipswich Town"
+
+    def test_normalize_ipswich_town_identity(self):
+        assert normalize_team_name("Ipswich Town", "E0") == "Ipswich Town"

@@ -40,6 +40,8 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Huddersfield Town": "Huddersfield Town",
         "Hull": "Hull City",
         "Hull City": "Hull City",
+        "Ipswich": "Ipswich Town",
+        "Ipswich Town": "Ipswich Town",
         "Leeds": "Leeds United",
         "Leeds United": "Leeds United",
         "Leicester": "Leicester City",
