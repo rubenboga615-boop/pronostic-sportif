@@ -5,7 +5,10 @@ import pandas as pd
 from datetime import datetime
 
 from app.config import settings
+from app.database import SessionLocal
+from app.models import Match
 from pipelines.historical_import import (
+    _make_provider_match_id,
     _process_match_row,
     _validate_goals,
     _validate_date,
@@ -189,5 +192,93 @@ class TestReportCounters:
             # ...mais le warning est compté et visible.
             assert report["validation_warnings"] >= 1
             assert any("négatifs" in w for w in report["warnings"])
+        finally:
+            csv_file.unlink(missing_ok=True)
+
+
+class TestProviderMatchId:
+    """Tests de l'identifiant provider déterministe et stable."""
+
+    def test_provider_match_id_is_deterministic(self):
+        """Deux appels avec les mêmes arguments produisent le même identifiant."""
+        args = ("E0", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        assert _make_provider_match_id(*args) == _make_provider_match_id(*args)
+
+    def test_provider_match_id_is_stable_across_process(self):
+        """L'identifiant ne dépend pas de hash() (salé par processus).
+
+        Valeur attendue pré-calculée via SHA-256 sur la clé canonique
+        ``E0|24|2024-01-01T00:00:00|Arsenal|Chelsea`` : identique quel que soit
+        le processus ou la machine.
+        """
+        expected_digest = "b67abdbcf695805edae6a419fe4b49cea082d5641b8ba2fb7d03cc8e62525da2"
+        result = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        assert result == f"fd_E0_24_{expected_digest}"
+
+    def test_provider_match_id_respects_home_away_order(self):
+        """PSG|Lyon ne doit jamais produire le même identifiant que Lyon|PSG."""
+        home_away = _make_provider_match_id("F1", "24", datetime(2024, 1, 1), "PSG", "Lyon")
+        away_home = _make_provider_match_id("F1", "24", datetime(2024, 1, 1), "Lyon", "PSG")
+        assert home_away != away_home
+
+    def test_provider_match_id_differs_on_distinct_matches(self):
+        """Des matchs différents (date ou équipe) produisent des identifiants différents."""
+        base = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        diff_date = _make_provider_match_id("E0", "24", datetime(2024, 1, 2), "Arsenal", "Chelsea")
+        diff_team = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Tottenham")
+        assert base != diff_date
+        assert base != diff_team
+
+    def test_provider_match_id_includes_league_and_season(self):
+        """Le code ligue et la saison sont inclus : pas de collision entre compétitions."""
+        e0 = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        sp1 = _make_provider_match_id("SP1", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        s24 = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        s25 = _make_provider_match_id("E0", "25", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        assert e0 != sp1
+        assert s24 != s25
+
+    def test_provider_match_id_missing_date(self):
+        """Une date manquante (NaT) produit un identifiant stable sans crash."""
+        a = _make_provider_match_id("E0", "24", pd.NaT, "Arsenal", "Chelsea")
+        b = _make_provider_match_id("E0", "24", pd.NaT, "Arsenal", "Chelsea")
+        assert a == b
+        assert a.startswith("fd_E0_24_")
+
+    def test_provider_match_id_format(self):
+        """Le format respecte le préfixe et le digest SHA-256 complet (64 hex)."""
+        mid = _make_provider_match_id("E0", "2024/2025", datetime(2024, 1, 1), "Arsenal", "Chelsea")
+        assert mid.startswith("fd_E0_2024/2025_")
+        digest = mid.rsplit("_", 1)[-1]
+        assert len(digest) == 64
+        assert all(c in "0123456789abcdef" for c in digest)
+
+    def test_import_uses_provider_match_id(self):
+        """L'identifiant déterministe est bien persisté lors de l'insertion."""
+        csv_content = """Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR
+01/01/2024,Arsenal,Chelsea,2,1,H
+"""
+        raw_dir = settings.raw_dir / "football_data" / "E0"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        csv_file = raw_dir / "E0_24_pmid.csv"
+        csv_file.write_text(csv_content)
+        try:
+            run_historical_import(
+                league_codes=["E0"],
+                seasons=["24"],
+                skip_download=True,
+            )
+            session = SessionLocal()
+            try:
+                match = session.query(Match).filter_by(provider="football_data").first()
+                assert match is not None
+                home_canonical = normalize_team_name("Arsenal", "E0")
+                away_canonical = normalize_team_name("Chelsea", "E0")
+                expected = _make_provider_match_id(
+                    "E0", "24", match.match_date, home_canonical, away_canonical
+                )
+                assert match.provider_match_id == expected
+            finally:
+                session.close()
         finally:
             csv_file.unlink(missing_ok=True)

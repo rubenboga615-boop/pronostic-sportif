@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -514,6 +515,27 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
     return file_report
 
 
+def _make_provider_match_id(
+    league_code: str,
+    season_name: str,
+    match_date,
+    home_canonical: str,
+    away_canonical: str,
+) -> str:
+    """Construire un identifiant provider déterministe et stable.
+
+    Utilise un condensat SHA-256 (déterministe, indépendant du processus) sur une
+    clé canonique ``league_code | season_name | date_iso | home | away``. L'ordre
+    domicile/extérieur est conservé : ``PSG|Lyon`` ne produit jamais le même
+    identifiant que ``Lyon|PSG``. L'inclusion du code ligue et de la saison évite
+    qu'un même match logique dans deux compétitions partage le même identifiant.
+    """
+    date_key = match_date.isoformat() if pd.notna(match_date) else "NaT"
+    key = "|".join([league_code, season_name, date_key, home_canonical, away_canonical])
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return f"fd_{league_code}_{season_name}_{digest}"
+
+
 def _process_match_row(
     session,
     row: pd.Series,
@@ -573,7 +595,13 @@ def _process_match_row(
     # Insérer le match
     match = Match(
         provider="football_data",
-        provider_match_id=f"fd_{league_code}_{season.season_name}_{hash((str(match_date), home_canonical, away_canonical)) & 0xFFFFFFFF:08x}",
+        provider_match_id=_make_provider_match_id(
+            league_code,
+            season.season_name,
+            match_date,
+            home_canonical,
+            away_canonical,
+        ),
         competition_id=competition.id,
         season_id=season.id,
         match_date=match_date if pd.notna(match_date) else None,
