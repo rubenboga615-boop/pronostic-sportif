@@ -1,46 +1,606 @@
-"""Pipeline d'import des données historiques."""
+"""Pipeline d'import des données historiques.
 
+Étapes :
+1. Télécharger les CSV des cinq championnats
+2. Parser et normaliser les colonnes
+3. Normaliser les noms d'équipes
+4. Valider les scores et dates
+5. Charger en base (upsert teams, matches, stats, odds)
+6. Déduplication
+7. Rapport de qualité
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pandas as pd
 from loguru import logger
+from sqlalchemy import text
+
+from app.database import SessionLocal, engine
+from app.models import (
+    Base,
+    Competition,
+    Match,
+    OddsSnapshot,
+    Season,
+    SourceHealth,
+    Team,
+    TeamMatchStats,
+)
+from collectors.football_data.league_config import LEAGUE_CONFIG
+from collectors.football_data.parser import parse_csv
+from collectors.football_data.team_normalizer import normalize_team_name
 
 
-def run_historical_import() -> None:
-    """Exécuter le pipeline d'import historique.
-    
-    Étapes :
-    1. Télécharger les CSV des cinq championnats
-    2. Normaliser les noms d'équipes
-    3. Normaliser les dates
-    4. Charger les résultats finaux et mi-temps
-    5. Ajouter la déduplication
-    6. Produire un rapport de qualité
+# ──────────────────────────────────────────────
+# Bookmaker odds columns mapping
+# ──────────────────────────────────────────────
+BOOKMAKER_MAP: dict[str, dict[str, str]] = {
+    "B365": {
+        "home": "odds_b365_home",
+        "draw": "odds_b365_draw",
+        "away": "odds_b365_away",
+    },
+    "B365_close": {
+        "home": "odds_b365_close_home",
+        "draw": "odds_b365_close_draw",
+        "away": "odds_b365_close_away",
+        "is_closing": True,
+    },
+    "BW": {
+        "home": "odds_bw_home",
+        "draw": "odds_bw_draw",
+        "away": "odds_bw_away",
+    },
+    "IW": {
+        "home": "odds_iw_home",
+        "draw": "odds_iw_draw",
+        "away": "odds_iw_away",
+    },
+    "PS": {
+        "home": "odds_pinnacle_home",
+        "draw": "odds_pinnacle_draw",
+        "away": "odds_pinnacle_away",
+    },
+}
+
+
+# ──────────────────────────────────────────────
+# Stats columns mapping
+# ──────────────────────────────────────────────
+STATS_COLUMNS_HOME = {
+    "home_shots": "shots",
+    "home_shots_on_target": "shots_on_target",
+    "home_corners": "corners",
+    "home_fouls": "fouls",
+    "home_yellow": "yellow_cards",
+    "home_red": "red_cards",
+}
+
+STATS_COLUMNS_AWAY = {
+    "away_shots": "shots",
+    "away_shots_on_target": "shots_on_target",
+    "away_corners": "corners",
+    "away_fouls": "fouls",
+    "away_yellow": "yellow_cards",
+    "away_red": "red_cards",
+}
+
+
+# ──────────────────────────────────────────────
+# Validation
+# ──────────────────────────────────────────────
+
+def _validate_goals(row: pd.Series) -> list[str]:
+    """Valider la cohérence des buts, retourner les warnings."""
+    warnings: list[str] = []
+    hg = row.get("home_goals")
+    ag = row.get("away_goals")
+    hthg = row.get("home_ht_goals")
+    htag = row.get("away_ht_goals")
+
+    # Buts négatifs
+    if pd.notna(hg) and hg < 0:
+        warnings.append(f"Buts domicile négatifs: {hg}")
+    if pd.notna(ag) and ag < 0:
+        warnings.append(f"Buts extérieur négatifs: {ag}")
+
+    # HT goals > FT goals
+    if pd.notna(hthg) and pd.notna(hg) and hthg > hg:
+        warnings.append(f"HT home {hthg} > FT home {hg}")
+    if pd.notna(htag) and pd.notna(ag) and htag > ag:
+        warnings.append(f"HT away {htag} > FT away {ag}")
+
+    return warnings
+
+
+def _validate_date(row: pd.Series) -> list[str]:
+    """Valider la date du match."""
+    warnings: list[str] = []
+    d = row.get("match_date")
+    if pd.isna(d):
+        warnings.append("Date manquante")
+        return warnings
+    if d.year < 2000:
+        warnings.append(f"Année suspecte: {d.year}")
+    return warnings
+
+
+# ──────────────────────────────────────────────
+# Database helpers
+# ──────────────────────────────────────────────
+
+def _upsert_competition(session, code: str, config: dict) -> Competition:
+    """Upsert une compétition."""
+    existing = session.query(Competition).filter_by(provider_code=code).first()
+    if existing:
+        return existing
+    comp = Competition(
+        provider_code=code,
+        name=config["name"],
+        country=config["country"],
+        active=True,
+    )
+    session.add(comp)
+    session.flush()
+    return comp
+
+
+def _upsert_season(session, competition_id: int, season_code: str) -> Season:
+    """Upsert une saison."""
+    existing = (
+        session.query(Season)
+        .filter_by(competition_id=competition_id, season_name=season_code)
+        .first()
+    )
+    if existing:
+        return existing
+    # Déterminer le statut
+    current_year = datetime.now().year
+    season_start = 2000 + int(season_code[:2])
+    status = "in_progress" if season_start == current_year else "complete"
+    season = Season(
+        competition_id=competition_id,
+        season_name=season_code,
+        start_date=datetime(season_start, 8, 1, tzinfo=timezone.utc),
+        end_date=datetime(season_start + 1, 5, 31, tzinfo=timezone.utc),
+        status=status,
+    )
+    session.add(season)
+    session.flush()
+    return season
+
+
+def _upsert_team(session, canonical_name: str, country: str) -> Team:
+    """Upsert une équipe."""
+    existing = (
+        session.query(Team)
+        .filter_by(canonical_name=canonical_name, provider="football_data")
+        .first()
+    )
+    if existing:
+        return existing
+    team = Team(
+        canonical_name=canonical_name,
+        country=country,
+        provider="football_data",
+        provider_team_id=canonical_name.lower().replace(" ", "-"),
+        active=True,
+    )
+    session.add(team)
+    session.flush()
+    return team
+
+
+def _find_existing_match(session, match_date, home_team_id: int, away_team_id: int) -> Match | None:
+    """Chercher un match existant par date + équipes."""
+    if pd.isna(match_date):
+        return None
+    return (
+        session.query(Match)
+        .filter(
+            Match.provider == "football_data",
+            Match.match_date == match_date,
+            Match.home_team_id == home_team_id,
+            Match.away_team_id == away_team_id,
+        )
+        .first()
+    )
+
+
+def _insert_team_match_stats(
+    session,
+    match_id: int,
+    team_id: int,
+    row: pd.Series,
+    is_home: bool,
+    source: str,
+) -> None:
+    """Insérer les stats d'équipe pour un match."""
+    cols_map = STATS_COLUMNS_HOME if is_home else STATS_COLUMNS_AWAY
+    stats: dict = {}
+    for src_col, db_col in cols_map.items():
+        val = row.get(src_col)
+        if pd.notna(val):
+            stats[db_col] = int(val)
+    if not stats:
+        return
+    tms = TeamMatchStats(
+        match_id=match_id,
+        team_id=team_id,
+        shots=stats.get("shots"),
+        shots_on_target=stats.get("shots_on_target"),
+        corners=stats.get("corners"),
+        fouls=stats.get("fouls"),
+        yellow_cards=stats.get("yellow_cards"),
+        red_cards=stats.get("red_cards"),
+        source=source,
+        quality_status="complete" if len(stats) >= 3 else "partial",
+    )
+    session.add(tms)
+
+
+def _insert_odds(
+    session,
+    match_id: int,
+    row: pd.Series,
+    match_date,
+) -> None:
+    """Insérer les cotes pour un match."""
+    for bookmaker, odds_cols in BOOKMAKER_MAP.items():
+        is_closing = odds_cols.get("is_closing", False)
+        selection_map = {k: v for k, v in odds_cols.items() if k != "is_closing"}
+        odds_values: dict[str, float] = {}
+        all_present = True
+        for selection, col_name in selection_map.items():
+            val = row.get(col_name)
+            if pd.notna(val) and val > 0:
+                odds_values[selection] = float(val)
+            else:
+                all_present = False
+        if not all_present:
+            continue
+        captured_at = match_date if pd.notna(match_date) else datetime.now(timezone.utc)
+        for selection, odds_val in odds_values.items():
+            snap = OddsSnapshot(
+                match_id=match_id,
+                bookmaker=bookmaker,
+                market="1N2",
+                selection=selection,
+                odds=odds_val,
+                captured_at=captured_at,
+                is_closing=is_closing,
+                source="football_data",
+            )
+            session.add(snap)
+
+
+# ──────────────────────────────────────────────
+# Quality report
+# ──────────────────────────────────────────────
+
+def _write_quality_report(report: dict, output_dir: Path) -> Path:
+    """Écrire le rapport de qualité en JSON."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / "import_report.json"
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, default=str)
+    logger.info(f"Rapport de qualité écrit : {report_path}")
+    return report_path
+
+
+# ──────────────────────────────────────────────
+# Main pipeline
+# ──────────────────────────────────────────────
+
+def run_historical_import(
+    league_codes: list[str] | None = None,
+    seasons: list[str] | None = None,
+    *,
+    skip_download: bool = False,
+    force_download: bool = False,
+) -> dict:
+    """Exécuter le pipeline d'import historique complet.
+
+    Args:
+        league_codes: Ligues à importer (None = toutes)
+        seasons: Saisons à importer (None = toutes disponibles)
+        skip_download: Si True, ne pas télécharger (utiliser les fichiers existants)
+        force_download: Si True, re-télécharger les fichiers existants
+
+    Returns:
+        Rapport de qualité
+
     """
+    from collectors.football_data.downloader import download_all
+
     logger.info("=== Début de l'import historique ===")
 
+    # Initialiser les tables
+    Base.metadata.create_all(bind=engine)
+
+    # Rapport
+    report: dict = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "files_processed": 0,
+        "total_matches": 0,
+        "matches_inserted": 0,
+        "matches_updated": 0,
+        "matches_skipped_duplicates": 0,
+        "teams_created": 0,
+        "odds_inserted": 0,
+        "stats_inserted": 0,
+        "warnings": [],
+        "errors": [],
+    }
+
     # Étape 1 : Téléchargement
-    logger.info("Étape 1 : Téléchargement des CSV...")
-    # TODO: implémenter avec collectors.football_data.downloader
+    downloaded_files: list[Path] = []
+    if not skip_download:
+        logger.info("Étape 1 : Téléchargement des CSV...")
+        import asyncio
+        try:
+            downloaded_files = asyncio.get_event_loop().run_until_complete(
+                download_all(league_codes, seasons, force=force_download)
+            )
+        except RuntimeError:
+            downloaded_files = asyncio.run(
+                download_all(league_codes, seasons, force=force_download)
+            )
+    else:
+        logger.info("Étape 1 : Skip téléchargement, utilisation des fichiers existants")
+        raw_dir = Path("data/raw/football_data")
+        if raw_dir.exists():
+            downloaded_files = sorted(raw_dir.rglob("*.csv"))
+        logger.info(f"  {len(downloaded_files)} fichiers trouvés sur disque")
 
-    # Étape 2 : Normalisation
-    logger.info("Étape 2 : Normalisation des noms d'équipes...")
-    # TODO: implémenter
+    if not downloaded_files:
+        logger.warning("Aucun fichier à traiter")
+        report["errors"].append("Aucun fichier téléchargé ou trouvé")
+        return report
 
-    # Étape 3 : Parse et nettoyage
-    logger.info("Étape 3 : Parse et nettoyage des dates...")
-    # TODO: implémenter avec collectors.football_data.parser
+    # Étape 2-6 : Parse, normalisation, validation, insertion
+    logger.info("Étape 2-6 : Parse, normalisation, validation, insertion...")
 
-    # Étape 4 : Chargement en base
-    logger.info("Étape 4 : Chargement en base de données...")
-    # TODO: implémenter
+    session = SessionLocal()
+    try:
+        for csv_file in downloaded_files:
+            report["files_processed"] += 1
+            file_report = _process_file(session, csv_file, report)
+            report["total_matches"] += file_report["total"]
+            report["matches_inserted"] += file_report["inserted"]
+            report["matches_updated"] += file_report["updated"]
+            report["matches_skipped_duplicates"] += file_report["duplicates"]
+            report["odds_inserted"] += file_report["odds"]
+            report["stats_inserted"] += file_report["stats"]
 
-    # Étape 5 : Déduplication
-    logger.info("Étape 5 : Déduplication...")
-    # TODO: implémenter
+        session.commit()
 
-    # Étape 6 : Rapport de qualité
-    logger.info("Étape 6 : Rapport de qualité...")
-    # TODO: implémenter
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Erreur fatale pendant l'import : {e}")
+        report["errors"].append(str(e))
+        raise
+    finally:
+        session.close()
+
+    # Étape 7 : Rapport de qualité
+    report["finished_at"] = datetime.now(timezone.utc).isoformat()
+    _write_quality_report(report, Path("data/cleaned"))
+
+    # Source health
+    _update_source_health(report)
 
     logger.info("=== Fin de l'import historique ===")
+    logger.info(
+        f"Fichiers: {report['files_processed']} | "
+        f"Matchs: {report['total_matches']} | "
+        f"Insérés: {report['matches_inserted']} | "
+        f"Doublons: {report['matches_skipped_duplicates']}"
+    )
+    return report
+
+
+def _process_file(session, csv_file: Path, report: dict) -> dict:
+    """Traiter un fichier CSV individuel. Retourne un sous-rapport."""
+    file_report = {
+        "total": 0,
+        "inserted": 0,
+        "updated": 0,
+        "duplicates": 0,
+        "odds": 0,
+        "stats": 0,
+    }
+
+    # Extraire league et season du nom de fichier
+    # Format attendu : {LEAGUE}_{SEASON}.csv
+    stem = csv_file.stem  # ex: E0_2324
+    parts = stem.split("_")
+    if len(parts) < 2:
+        report["warnings"].append(f"Nom de fichier inattendu: {csv_file.name}")
+        return file_report
+
+    league_code = parts[0]
+    season_code = parts[1]
+
+    if league_code not in LEAGUE_CONFIG:
+        report["warnings"].append(f"Ligue inconnue dans le fichier: {league_code} ({csv_file.name})")
+        return file_report
+
+    league_config = LEAGUE_CONFIG[league_code]
+    country = league_config["country"]
+
+    # Parse le CSV
+    try:
+        df = parse_csv(csv_file)
+    except Exception as e:
+        logger.error(f"Erreur parsing {csv_file.name}: {e}")
+        report["errors"].append(f"Parse error {csv_file.name}: {e}")
+        return file_report
+
+    if df.empty:
+        logger.warning(f"Fichier vide: {csv_file.name}")
+        return file_report
+
+    file_report["total"] = len(df)
+
+    # Upsert competition et season
+    competition = _upsert_competition(session, league_code, league_config)
+    season = _upsert_season(session, competition.id, season_code)
+
+    # Traiter chaque ligne
+    for idx, row in df.iterrows():
+        try:
+            result = _process_match_row(
+                session, row, competition, season, league_code, country
+            )
+            if result == "inserted":
+                file_report["inserted"] += 1
+            elif result == "updated":
+                file_report["updated"] += 1
+            elif result == "duplicate":
+                file_report["duplicates"] += 1
+        except Exception as e:
+            logger.warning(f"Erreur ligne {idx} dans {csv_file.name}: {e}")
+            report["warnings"].append(f"Row {idx} in {csv_file.name}: {e}")
+
+    # Compter odds et stats insérés
+    session.flush()
+    file_report["odds"] = _count_new_odds(session, df)
+    file_report["stats"] = _count_new_stats(session, df)
+
+    logger.info(
+        f"  {csv_file.name}: {file_report['total']} matchs, "
+        f"{file_report['inserted']} insérés, "
+        f"{file_report['duplicates']} doublons"
+    )
+
+    return file_report
+
+
+def _process_match_row(
+    session,
+    row: pd.Series,
+    competition: Competition,
+    season: Season,
+    league_code: str,
+    country: str,
+) -> str:
+    """Traiter une ligne de match. Retourne 'inserted', 'updated', ou 'duplicate'."""
+    home_name = row.get("home_team")
+    away_name = row.get("away_team")
+
+    if pd.isna(home_name) or pd.isna(away_name):
+        return "duplicate"
+
+    # Normaliser les noms
+    home_canonical = normalize_team_name(str(home_name), league_code)
+    away_canonical = normalize_team_name(str(away_name), league_code)
+
+    # Valider les buts
+    goal_warnings = _validate_goals(row)
+    for w in goal_warnings:
+        logger.debug(f"  Warning: {w}")
+
+    # Valider la date
+    date_warnings = _validate_date(row)
+    for w in date_warnings:
+        logger.debug(f"  Warning: {w}")
+
+    # Déterminer le statut du match
+    hg = row.get("home_goals")
+    ag = row.get("away_goals")
+    if pd.isna(hg) or pd.isna(ag):
+        match_status = "unknown"
+    else:
+        match_status = "completed"
+
+    # Upsert teams
+    home_team = _upsert_team(session, home_canonical, country)
+    away_team = _upsert_team(session, away_canonical, country)
+
+    # Vérifier les doublons
+    match_date = row.get("match_date")
+    existing = _find_existing_match(session, match_date, home_team.id, away_team.id)
+    if existing:
+        return "duplicate"
+
+    # Insérer le match
+    match = Match(
+        provider="football_data",
+        provider_match_id=f"fd_{league_code}_{season.season_name}_{hash((str(match_date), home_canonical, away_canonical)) & 0xFFFFFFFF:08x}",
+        competition_id=competition.id,
+        season_id=season.id,
+        match_date=match_date if pd.notna(match_date) else None,
+        home_team_id=home_team.id,
+        away_team_id=away_team.id,
+        status=match_status,
+        home_goals=int(hg) if pd.notna(hg) else None,
+        away_goals=int(ag) if pd.notna(ag) else None,
+        home_ht_goals=int(row["home_ht_goals"]) if pd.notna(row.get("home_ht_goals")) else None,
+        away_ht_goals=int(row["away_ht_goals"]) if pd.notna(row.get("away_ht_goals")) else None,
+        home_shots=int(row["home_shots"]) if pd.notna(row.get("home_shots")) else None,
+        away_shots=int(row["away_shots"]) if pd.notna(row.get("away_shots")) else None,
+        home_shots_on_target=int(row["home_shots_on_target"]) if pd.notna(row.get("home_shots_on_target")) else None,
+        away_shots_on_target=int(row["away_shots_on_target"]) if pd.notna(row.get("away_shots_on_target")) else None,
+    )
+    session.add(match)
+    session.flush()
+
+    # Insérer les stats d'équipe
+    _insert_team_match_stats(session, match.id, home_team.id, row, is_home=True, source="football_data")
+    _insert_team_match_stats(session, match.id, away_team.id, row, is_home=False, source="football_data")
+
+    # Insérer les cotes
+    _insert_odds(session, match.id, row, match_date)
+
+    return "inserted"
+
+
+def _count_new_odds(session, df: pd.DataFrame) -> int:
+    """Compter le nombre de bookmakers disponibles dans le dataframe."""
+    count = 0
+    for bookmaker, odds_cols in BOOKMAKER_MAP.items():
+        selection_cols = [v for k, v in odds_cols.items() if k != "is_closing"]
+        if all(c in df.columns for c in selection_cols):
+            non_null = df[selection_cols[0]].notna().sum()
+            count += int(non_null) * len(selection_cols)
+    return count
+
+
+def _count_new_stats(session, df: pd.DataFrame) -> int:
+    """Compter le nombre de lignes avec des stats."""
+    stat_cols = list(STATS_COLUMNS_HOME.keys())
+    present = [c for c in stat_cols if c in df.columns]
+    if not present:
+        return 0
+    return int(df[present].notna().any(axis=1).sum()) * 2  # 2 équipes par match
+
+
+def _update_source_health(report: dict) -> None:
+    """Mettre à jour la table source_health."""
+    session = SessionLocal()
+    try:
+        existing = session.query(SourceHealth).filter_by(source="football_data").first()
+        if existing:
+            existing.last_success_at = datetime.now(timezone.utc)
+            existing.records_last_run = report["matches_inserted"]
+            existing.status = "healthy" if not report["errors"] else "degraded"
+        else:
+            sh = SourceHealth(
+                source="football_data",
+                last_success_at=datetime.now(timezone.utc),
+                records_last_run=report["matches_inserted"],
+                status="healthy" if not report["errors"] else "degraded",
+            )
+            session.add(sh)
+        session.commit()
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
