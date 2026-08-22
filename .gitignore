@@ -22,6 +22,7 @@ build/
 *~
 
 # Data (garder les structures, ignorer les données)
+backups/
 data/raw/
 data/cleaned/
 data/features/
