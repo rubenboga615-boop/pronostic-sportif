@@ -77,3 +77,24 @@ class TestTeamNormalizer:
         assert "E0" in names
         assert "Manchester City" in names["E0"]
         assert "Barcelona" in names["SP1"]
+
+    def test_normalize_man_united(self):
+        assert normalize_team_name("Man United", "E0") == "Manchester Utd"
+
+    def test_normalize_man_united_aliases_converge(self):
+        # Les trois variantes convergent vers le même nom canonique
+        assert normalize_team_name("Man United", "E0") == normalize_team_name("Man Utd", "E0")
+        assert normalize_team_name("Manchester United", "E0") == "Manchester Utd"
+
+    def test_normalize_luton(self):
+        assert normalize_team_name("Luton", "E0") == "Luton Town"
+        assert normalize_team_name("Luton Town", "E0") == "Luton Town"
+
+    def test_normalize_brentford(self):
+        assert normalize_team_name("Brentford", "E0") == "Brentford"
+
+    def test_man_united_not_confused_with_man_city(self):
+        # Manchester United et Manchester City restent deux clubs distincts
+        assert normalize_team_name("Man United", "E0") != normalize_team_name("Man City", "E0")
+        assert normalize_team_name("Man United", "E0") == "Manchester Utd"
+        assert normalize_team_name("Man City", "E0") == "Manchester City"
