@@ -83,3 +83,20 @@ def clean_database():
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(text(f"DELETE FROM {table.name}"))
         conn.commit()
+
+
+# ─────────────────────────────────────────────────────────────
+# 4) Isolation des chemins de données
+# ─────────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def isolated_data_dirs(tmp_path, monkeypatch):
+    """Rediriger les répertoires d'écriture vers un dossier temporaire.
+
+    Évite que les tests n'écrivent dans les chemins de production
+    (``data/raw``, ``data/cleaned``). Le monkeypatch est réversible et propre
+    à chaque test.
+    """
+    monkeypatch.setattr(settings, "raw_dir", tmp_path / "raw")
+    monkeypatch.setattr(settings, "cleaned_dir", tmp_path / "cleaned")
+    yield

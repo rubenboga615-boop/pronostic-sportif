@@ -20,6 +20,7 @@ import pandas as pd
 from loguru import logger
 from sqlalchemy import text
 
+from app.config import settings
 from app.database import SessionLocal, engine
 from app.models import (
     Base,
@@ -353,7 +354,7 @@ def run_historical_import(
             )
     else:
         logger.info("Étape 1 : Skip téléchargement, utilisation des fichiers existants")
-        raw_dir = Path("data/raw/football_data")
+        raw_dir = settings.raw_dir / "football_data"
         if raw_dir.exists():
             downloaded_files = sorted(raw_dir.rglob("*.csv"))
         logger.info(f"  {len(downloaded_files)} fichiers trouvés sur disque")
@@ -390,7 +391,7 @@ def run_historical_import(
 
     # Étape 7 : Rapport de qualité
     report["finished_at"] = datetime.now(timezone.utc).isoformat()
-    _write_quality_report(report, Path("data/cleaned"))
+    _write_quality_report(report, settings.cleaned_dir)
 
     # Source health
     _update_source_health(report)

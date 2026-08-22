@@ -2,9 +2,9 @@
 
 import pytest
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
 
+from app.config import settings
 from pipelines.historical_import import (
     _validate_goals,
     _validate_date,
@@ -71,7 +71,7 @@ class TestHistoricalImport:
 01/01/2024,Arsenal,Chelsea,2,1,H,1,0,H,15,10,1.5,4.0,6.5
 08/01/2024,Liverpool,Manchester City,1,1,D,0,0,D,12,14,2.5,3.5,2.8
 """
-        raw_dir = Path("data/raw/football_data/E0")
+        raw_dir = settings.raw_dir / "football_data" / "E0"
         raw_dir.mkdir(parents=True, exist_ok=True)
         csv_file = raw_dir / "E0_24_test.csv"
         csv_file.write_text(csv_content)
@@ -106,7 +106,7 @@ class TestHistoricalImport:
 01/01/2024,Wolves,Tottenham,3,0,H
 01/01/2024,Wolves,Tottenham,3,0,H
 """
-        raw_dir = Path("data/raw/football_data/E0")
+        raw_dir = settings.raw_dir / "football_data" / "E0"
         raw_dir.mkdir(parents=True, exist_ok=True)
         csv_file = raw_dir / "E0_24_dedup.csv"
         csv_file.write_text(csv_content)
