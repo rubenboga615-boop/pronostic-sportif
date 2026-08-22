@@ -60,8 +60,10 @@ def main() -> None:
     logger.info("=== Terminé ===")
     logger.info(
         f"Résultat: {report['files_processed']} fichiers, "
+        f"{report['rows_read']} lignes, "
         f"{report['matches_inserted']} matchs insérés, "
-        f"{report['matches_skipped_duplicates']} doublons"
+        f"{report['matches_duplicates']} doublons, "
+        f"{report['rows_errored']} erreurs"
     )
 
 

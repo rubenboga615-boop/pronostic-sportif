@@ -176,15 +176,15 @@ def _upsert_season(session, competition_id: int, season_code: str) -> Season:
     return season
 
 
-def _upsert_team(session, canonical_name: str, country: str) -> Team:
-    """Upsert une équipe."""
+def _upsert_team(session, canonical_name: str, country: str) -> tuple[Team, bool]:
+    """Upsert une équipe. Retourne (équipe, créée_ou_non)."""
     existing = (
         session.query(Team)
         .filter_by(canonical_name=canonical_name, provider="football_data")
         .first()
     )
     if existing:
-        return existing
+        return existing, False
     team = Team(
         canonical_name=canonical_name,
         country=country,
@@ -194,7 +194,7 @@ def _upsert_team(session, canonical_name: str, country: str) -> Team:
     )
     session.add(team)
     session.flush()
-    return team
+    return team, True
 
 
 def _find_existing_match(session, match_date, home_team_id: int, away_team_id: int) -> Match | None:
@@ -220,8 +220,8 @@ def _insert_team_match_stats(
     row: pd.Series,
     is_home: bool,
     source: str,
-) -> None:
-    """Insérer les stats d'équipe pour un match."""
+) -> int:
+    """Insérer les stats d'équipe pour un match. Retourne 1 si inséré, 0 sinon."""
     cols_map = STATS_COLUMNS_HOME if is_home else STATS_COLUMNS_AWAY
     stats: dict = {}
     for src_col, db_col in cols_map.items():
@@ -229,7 +229,7 @@ def _insert_team_match_stats(
         if pd.notna(val):
             stats[db_col] = int(val)
     if not stats:
-        return
+        return 0
     tms = TeamMatchStats(
         match_id=match_id,
         team_id=team_id,
@@ -243,6 +243,7 @@ def _insert_team_match_stats(
         quality_status="complete" if len(stats) >= 3 else "partial",
     )
     session.add(tms)
+    return 1
 
 
 def _insert_odds(
@@ -250,8 +251,9 @@ def _insert_odds(
     match_id: int,
     row: pd.Series,
     match_date,
-) -> None:
-    """Insérer les cotes pour un match."""
+) -> int:
+    """Insérer les cotes pour un match. Retourne le nombre de snapshots insérés."""
+    inserted = 0
     for bookmaker, odds_cols in BOOKMAKER_MAP.items():
         is_closing = odds_cols.get("is_closing", False)
         selection_map = {k: v for k, v in odds_cols.items() if k != "is_closing"}
@@ -278,6 +280,8 @@ def _insert_odds(
                 source="football_data",
             )
             session.add(snap)
+            inserted += 1
+    return inserted
 
 
 # ──────────────────────────────────────────────
@@ -327,14 +331,22 @@ def run_historical_import(
     # Rapport
     report: dict = {
         "started_at": datetime.now(timezone.utc).isoformat(),
+        # Fichiers
         "files_processed": 0,
-        "total_matches": 0,
+        "files_skipped": 0,
+        # Lignes (invariant : rows_read == matches_inserted + matches_duplicates
+        #          + matches_skipped_invalid + rows_errored)
+        "rows_read": 0,
         "matches_inserted": 0,
-        "matches_updated": 0,
-        "matches_skipped_duplicates": 0,
+        "matches_duplicates": 0,
+        "matches_skipped_invalid": 0,
+        "rows_errored": 0,
+        # Volumes réellement insérés
         "teams_created": 0,
         "odds_inserted": 0,
         "stats_inserted": 0,
+        # Qualité (advisory, non bloquant)
+        "validation_warnings": 0,
         "warnings": [],
         "errors": [],
     }
@@ -370,14 +382,18 @@ def run_historical_import(
     session = SessionLocal()
     try:
         for csv_file in downloaded_files:
-            report["files_processed"] += 1
             file_report = _process_file(session, csv_file, report)
-            report["total_matches"] += file_report["total"]
+            report["files_processed"] += file_report["processed"]
+            report["files_skipped"] += file_report["skipped"]
+            report["rows_read"] += file_report["total"]
             report["matches_inserted"] += file_report["inserted"]
-            report["matches_updated"] += file_report["updated"]
-            report["matches_skipped_duplicates"] += file_report["duplicates"]
+            report["matches_duplicates"] += file_report["duplicates"]
+            report["matches_skipped_invalid"] += file_report["invalid"]
+            report["rows_errored"] += file_report["errored"]
+            report["teams_created"] += file_report["teams_created"]
             report["odds_inserted"] += file_report["odds"]
             report["stats_inserted"] += file_report["stats"]
+            report["validation_warnings"] += file_report["validation_warnings"]
 
         session.commit()
 
@@ -398,10 +414,11 @@ def run_historical_import(
 
     logger.info("=== Fin de l'import historique ===")
     logger.info(
-        f"Fichiers: {report['files_processed']} | "
-        f"Matchs: {report['total_matches']} | "
+        f"Fichiers: {report['files_processed']} (ignorés: {report['files_skipped']}) | "
+        f"Lignes: {report['rows_read']} | "
         f"Insérés: {report['matches_inserted']} | "
-        f"Doublons: {report['matches_skipped_duplicates']}"
+        f"Doublons: {report['matches_duplicates']} | "
+        f"Erreurs: {report['rows_errored']}"
     )
     return report
 
@@ -409,12 +426,17 @@ def run_historical_import(
 def _process_file(session, csv_file: Path, report: dict) -> dict:
     """Traiter un fichier CSV individuel. Retourne un sous-rapport."""
     file_report = {
+        "processed": 0,
+        "skipped": 0,
         "total": 0,
         "inserted": 0,
-        "updated": 0,
         "duplicates": 0,
+        "invalid": 0,
+        "errored": 0,
+        "teams_created": 0,
         "odds": 0,
         "stats": 0,
+        "validation_warnings": 0,
     }
 
     # Extraire league et season du nom de fichier
@@ -423,6 +445,7 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
     parts = stem.split("_")
     if len(parts) < 2:
         report["warnings"].append(f"Nom de fichier inattendu: {csv_file.name}")
+        file_report["skipped"] = 1
         return file_report
 
     league_code = parts[0]
@@ -430,6 +453,7 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
 
     if league_code not in LEAGUE_CONFIG:
         report["warnings"].append(f"Ligue inconnue dans le fichier: {league_code} ({csv_file.name})")
+        file_report["skipped"] = 1
         return file_report
 
     league_config = LEAGUE_CONFIG[league_code]
@@ -441,7 +465,10 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
     except Exception as e:
         logger.error(f"Erreur parsing {csv_file.name}: {e}")
         report["errors"].append(f"Parse error {csv_file.name}: {e}")
+        file_report["skipped"] = 1
         return file_report
+
+    file_report["processed"] = 1
 
     if df.empty:
         logger.warning(f"Fichier vide: {csv_file.name}")
@@ -459,20 +486,24 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
             result = _process_match_row(
                 session, row, competition, season, league_code, country
             )
-            if result == "inserted":
+            disposition = result["disposition"]
+            if disposition == "inserted":
                 file_report["inserted"] += 1
-            elif result == "updated":
-                file_report["updated"] += 1
-            elif result == "duplicate":
+            elif disposition == "duplicate":
                 file_report["duplicates"] += 1
+            elif disposition == "invalid":
+                file_report["invalid"] += 1
+            file_report["teams_created"] += result["teams_created"]
+            file_report["odds"] += result["odds"]
+            file_report["stats"] += result["stats"]
+            if result["validation_warnings"]:
+                file_report["validation_warnings"] += len(result["validation_warnings"])
+                for w in result["validation_warnings"]:
+                    report["warnings"].append(f"{csv_file.name} ligne {idx}: {w}")
         except Exception as e:
             logger.warning(f"Erreur ligne {idx} dans {csv_file.name}: {e}")
             report["warnings"].append(f"Row {idx} in {csv_file.name}: {e}")
-
-    # Compter odds et stats insérés
-    session.flush()
-    file_report["odds"] = _count_new_odds(session, df)
-    file_report["stats"] = _count_new_stats(session, df)
+            file_report["errored"] += 1
 
     logger.info(
         f"  {csv_file.name}: {file_report['total']} matchs, "
@@ -490,45 +521,54 @@ def _process_match_row(
     season: Season,
     league_code: str,
     country: str,
-) -> str:
-    """Traiter une ligne de match. Retourne 'inserted', 'updated', ou 'duplicate'."""
+) -> dict:
+    """Traiter une ligne de match.
+
+    Retourne un dictionnaire :
+    - ``disposition`` : ``'inserted'`` | ``'duplicate'`` | ``'invalid'`` ;
+    - ``teams_created``, ``odds``, ``stats`` : volumes réellement insérés ;
+    - ``validation_warnings`` : avertissements de validation (advisory).
+    """
     home_name = row.get("home_team")
     away_name = row.get("away_team")
 
     if pd.isna(home_name) or pd.isna(away_name):
-        return "duplicate"
+        return {
+            "disposition": "invalid",
+            "teams_created": 0,
+            "odds": 0,
+            "stats": 0,
+            "validation_warnings": [],
+        }
 
     # Normaliser les noms
     home_canonical = normalize_team_name(str(home_name), league_code)
     away_canonical = normalize_team_name(str(away_name), league_code)
 
-    # Valider les buts
-    goal_warnings = _validate_goals(row)
-    for w in goal_warnings:
-        logger.debug(f"  Warning: {w}")
-
-    # Valider la date
-    date_warnings = _validate_date(row)
-    for w in date_warnings:
-        logger.debug(f"  Warning: {w}")
+    # Valider les buts et la date (advisory : n'empêche pas l'insertion)
+    validation_warnings = _validate_goals(row) + _validate_date(row)
 
     # Déterminer le statut du match
     hg = row.get("home_goals")
     ag = row.get("away_goals")
-    if pd.isna(hg) or pd.isna(ag):
-        match_status = "unknown"
-    else:
-        match_status = "completed"
+    match_status = "unknown" if (pd.isna(hg) or pd.isna(ag)) else "completed"
 
     # Upsert teams
-    home_team = _upsert_team(session, home_canonical, country)
-    away_team = _upsert_team(session, away_canonical, country)
+    home_team, home_created = _upsert_team(session, home_canonical, country)
+    away_team, away_created = _upsert_team(session, away_canonical, country)
+    teams_created = int(home_created) + int(away_created)
 
     # Vérifier les doublons
     match_date = row.get("match_date")
     existing = _find_existing_match(session, match_date, home_team.id, away_team.id)
     if existing:
-        return "duplicate"
+        return {
+            "disposition": "duplicate",
+            "teams_created": teams_created,
+            "odds": 0,
+            "stats": 0,
+            "validation_warnings": validation_warnings,
+        }
 
     # Insérer le match
     match = Match(
@@ -553,33 +593,23 @@ def _process_match_row(
     session.flush()
 
     # Insérer les stats d'équipe
-    _insert_team_match_stats(session, match.id, home_team.id, row, is_home=True, source="football_data")
-    _insert_team_match_stats(session, match.id, away_team.id, row, is_home=False, source="football_data")
+    stats_inserted = _insert_team_match_stats(
+        session, match.id, home_team.id, row, is_home=True, source="football_data"
+    )
+    stats_inserted += _insert_team_match_stats(
+        session, match.id, away_team.id, row, is_home=False, source="football_data"
+    )
 
     # Insérer les cotes
-    _insert_odds(session, match.id, row, match_date)
+    odds_inserted = _insert_odds(session, match.id, row, match_date)
 
-    return "inserted"
-
-
-def _count_new_odds(session, df: pd.DataFrame) -> int:
-    """Compter le nombre de bookmakers disponibles dans le dataframe."""
-    count = 0
-    for bookmaker, odds_cols in BOOKMAKER_MAP.items():
-        selection_cols = [v for k, v in odds_cols.items() if k != "is_closing"]
-        if all(c in df.columns for c in selection_cols):
-            non_null = df[selection_cols[0]].notna().sum()
-            count += int(non_null) * len(selection_cols)
-    return count
-
-
-def _count_new_stats(session, df: pd.DataFrame) -> int:
-    """Compter le nombre de lignes avec des stats."""
-    stat_cols = list(STATS_COLUMNS_HOME.keys())
-    present = [c for c in stat_cols if c in df.columns]
-    if not present:
-        return 0
-    return int(df[present].notna().any(axis=1).sum()) * 2  # 2 équipes par match
+    return {
+        "disposition": "inserted",
+        "teams_created": teams_created,
+        "odds": odds_inserted,
+        "stats": stats_inserted,
+        "validation_warnings": validation_warnings,
+    }
 
 
 def _update_source_health(report: dict) -> None:
