@@ -56,7 +56,7 @@ def populated_db():
         target = add_match(t1, t2, datetime(2024, 3, 1), None, None)
         session.flush()
 
-        # Paire ouverture/clôture (B365 -> B365_close) pour le match cible (2.0 -> 1.8).
+        # Paires ouverture/clôture (B365 -> B365_close) pour home (2.0->1.8) et away (5.0->4.0).
         session.add_all([
             OddsSnapshot(
                 match_id=target.id, bookmaker="B365", market="1N2",
@@ -66,6 +66,16 @@ def populated_db():
             OddsSnapshot(
                 match_id=target.id, bookmaker="B365_close", market="1N2",
                 selection="home", odds=1.8, is_closing=True,
+                captured_at=datetime(2024, 2, 28),
+            ),
+            OddsSnapshot(
+                match_id=target.id, bookmaker="B365", market="1N2",
+                selection="away", odds=5.0, is_closing=False,
+                captured_at=datetime(2024, 2, 1),
+            ),
+            OddsSnapshot(
+                match_id=target.id, bookmaker="B365_close", market="1N2",
+                selection="away", odds=4.0, is_closing=True,
                 captured_at=datetime(2024, 2, 28),
             ),
         ])
@@ -138,9 +148,9 @@ class TestRunFeaturePipeline:
                 .filter_by(match_id=populated_db["target_id"], team_id=populated_db["t2"])
                 .first()
             )
-            # Ouverture 2.0 -> clôture 1.8 pour la sélection home, dupliquée sur les 2 lignes.
+            # home -> "home" (2.0 -> 1.8) ; away -> "away" (5.0 -> 4.0).
             assert home.odds_movement == pytest.approx((1.8 - 2.0) / 2.0)
-            assert away.odds_movement == pytest.approx((1.8 - 2.0) / 2.0)
+            assert away.odds_movement == pytest.approx((4.0 - 5.0) / 5.0)
         finally:
             session.close()
 

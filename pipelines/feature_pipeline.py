@@ -77,7 +77,7 @@ def compute_match_features(
     Règles validées :
     - anti-fuite : seuls les matchs antérieurs à ``match_date`` sont utilisés ;
     - ``rest_days`` et ``elo_rating`` sont choisis selon le côté ;
-    - ``odds_movement`` (match-level) est dupliqué sur les deux lignes ;
+    - ``odds_movement`` est calculé par sélection (``home``/``away``) selon le côté ;
     - ``goal_difference`` n'est fourni que s'il est disponible avant le match ;
     - ``opponent_strength``, ``xg_*`` et ``injury_impact`` restent ``None``.
     """
@@ -91,9 +91,6 @@ def compute_match_features(
     prior = prior_matches_df[prior_matches_df["match_date"] < match_date]
 
     # Grandeurs partagées, calculées une seule fois.
-    odds_movement = calculate_odds_movement(odds_df, match_id, market="1N2")[
-        "odds_movement"
-    ]
     rest = calculate_rest_features(prior, home_id, away_id, match_date)
     standings = calculate_standings(prior, match_date, competition_id=competition_id)
     elo_home = _compute_elo_before(prior, home_id)
@@ -102,8 +99,12 @@ def compute_match_features(
     result: dict[str, dict[str, Any]] = {}
 
     for side, team_id in (("home", home_id), ("away", away_id)):
+        # Sélection de cote selon le côté : home -> "home", away -> "away".
+        odds_movement = calculate_odds_movement(
+            odds_df, match_id, market="1N2", selection=side
+        )["odds_movement"]
         raw = {
-            # match-level, dupliqué volontairement sur les deux lignes.
+            # par sélection (home -> "home", away -> "away").
             "odds_movement": odds_movement,
             # côté-dépendant.
             "home_rest_days": rest["home_rest_days"],

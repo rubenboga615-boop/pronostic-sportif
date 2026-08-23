@@ -40,15 +40,15 @@ def _target_match() -> pd.Series:
 
 
 def _odds_df() -> pd.DataFrame:
-    """Paire ouverture/clôture (B365 -> B365_close) pour le match cible (2.0 -> 1.8)."""
+    """Paires ouverture/clôture (B365 -> B365_close) pour home (2.0->1.8) et away (5.0->4.0)."""
     return pd.DataFrame({
-        "match_id": [100, 100],
-        "market": ["1N2", "1N2"],
-        "selection": ["home", "home"],
-        "bookmaker": ["B365", "B365_close"],
-        "is_closing": [0, 1],
-        "odds": [2.0, 1.8],
-        "captured_at": pd.to_datetime(["2024-02-01", "2024-02-28"]),
+        "match_id": [100, 100, 100, 100],
+        "market": ["1N2", "1N2", "1N2", "1N2"],
+        "selection": ["home", "home", "away", "away"],
+        "bookmaker": ["B365", "B365_close", "B365", "B365_close"],
+        "is_closing": [0, 1, 0, 1],
+        "odds": [2.0, 1.8, 5.0, 4.0],
+        "captured_at": pd.to_datetime(["2024-02-01", "2024-02-28", "2024-02-01", "2024-02-28"]),
     })
 
 
@@ -92,10 +92,11 @@ class TestComputeMatchFeatures:
         assert result["home"]["rest_days"] == 15
         assert result["away"]["rest_days"] == 10
 
-    def test_odds_movement_duplicated(self):
+    def test_odds_movement_per_selection(self):
         result = compute_match_features(_target_match(), _prior_df(), _odds_df())
-        assert result["home"]["odds_movement"] == pytest.approx(-0.1)
-        assert result["away"]["odds_movement"] == pytest.approx(-0.1)
+        # home -> sélection "home" (2.0 -> 1.8) ; away -> sélection "away" (5.0 -> 4.0).
+        assert result["home"]["odds_movement"] == pytest.approx((1.8 - 2.0) / 2.0)
+        assert result["away"]["odds_movement"] == pytest.approx((4.0 - 5.0) / 5.0)
 
     def test_goal_difference_available(self):
         result = compute_match_features(_target_match(), _prior_df(), _odds_df())
