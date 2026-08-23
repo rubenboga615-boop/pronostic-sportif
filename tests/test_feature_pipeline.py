@@ -100,6 +100,9 @@ class TestComputeMatchFeatures:
         # Équipe 1 : gf=7, ga=1 -> +6 ; équipe 2 : gf=3, ga=3 -> 0.
         assert result["home"]["goal_difference"] == 6
         assert result["away"]["goal_difference"] == 0
+        # La valeur est un entier (colonne Feature.goal_difference = Integer).
+        assert isinstance(result["home"]["goal_difference"], int)
+        assert isinstance(result["away"]["goal_difference"], int)
 
     def test_goal_difference_none_when_no_history(self):
         empty = _prior_df().iloc[0:0]

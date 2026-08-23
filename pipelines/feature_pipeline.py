@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from app.models import Feature
 from features.elo import DEFAULT_ELO, update_elo
 from features.form import calculate_form_features
 from features.home_away import calculate_home_away_features
@@ -135,7 +136,7 @@ def _compute_elo_before(prior_df: pd.DataFrame, team_id: int) -> float:
     return ratings.get(team_id, DEFAULT_ELO)
 
 
-def _goal_difference(standings: pd.DataFrame, team_id: int) -> float | None:
+def _goal_difference(standings: pd.DataFrame, team_id: int) -> int | None:
     """Différence de buts (gf - ga) pré-match, ou ``None`` si indisponible."""
     if standings is None or standings.empty or team_id not in standings.index:
         return None
@@ -143,7 +144,48 @@ def _goal_difference(standings: pd.DataFrame, team_id: int) -> float | None:
     ga = standings.loc[team_id, "ga"]
     if pd.isna(gf) or pd.isna(ga):
         return None
-    return float(gf) - float(ga)
+    return int(gf) - int(ga)
+
+
+def _upsert_feature(
+    session,
+    match_id: int,
+    team_id: int,
+    cols: dict[str, Any],
+) -> Feature:
+    """Insérer ou mettre à jour la ligne de features d'un match/équipe.
+
+    Cherche la ``Feature`` existante par ``(match_id, team_id)``. Si elle existe,
+    met à jour les colonnes présentes dans ``cols``. Sinon, crée une nouvelle
+    ligne. Ne crée jamais de doublon.
+    """
+    feature = (
+        session.query(Feature)
+        .filter_by(match_id=match_id, team_id=team_id)
+        .first()
+    )
+    if feature is None:
+        feature = Feature(match_id=match_id, team_id=team_id, **cols)
+        session.add(feature)
+    else:
+        for column, value in cols.items():
+            setattr(feature, column, value)
+    return feature
+
+
+def persist_match_features(
+    session,
+    match: pd.Series,
+    cols_home: dict[str, Any],
+    cols_away: dict[str, Any],
+) -> None:
+    """Persister les deux lignes de features d'un match (domicile + extérieur).
+
+    N'appelle pas ``session.commit()`` : le commit est laissé à l'appelant.
+    """
+    match_id = int(match["id"])
+    _upsert_feature(session, match_id, int(match["home_team_id"]), cols_home)
+    _upsert_feature(session, match_id, int(match["away_team_id"]), cols_away)
 
 
 if __name__ == "__main__":
