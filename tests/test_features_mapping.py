@@ -66,11 +66,39 @@ class TestMapping:
         raw = {
             "form_wins_5": 2,
             "clean_sheets_5": 1,
-            "home_rest_days": 8,
+            "rest_days_difference": 2,
+            "home_elo": 1510.0,
             "comparable_teams": [11, 1, 3],
         }
         mapped = map_features_to_columns(raw)
         assert "form_wins_5" not in mapped
         assert "clean_sheets_5" not in mapped
-        assert "home_rest_days" not in mapped
+        assert "rest_days_difference" not in mapped
+        assert "home_elo" not in mapped
         assert "comparable_teams" not in mapped
+
+    def test_rest_days_side_selection(self):
+        raw = {"home_rest_days": 8, "away_rest_days": 5}
+        assert map_features_to_columns(raw, side="home")["rest_days"] == 8
+        assert map_features_to_columns(raw, side="away")["rest_days"] == 5
+
+    def test_elo_rating_side_selection(self):
+        raw = {"home_elo": 1510.0, "away_elo": 1490.0}
+        assert map_features_to_columns(raw, side="home")["elo_rating"] == 1510.0
+        assert map_features_to_columns(raw, side="away")["elo_rating"] == 1490.0
+
+    def test_odds_movement_duplicated(self):
+        raw = {"odds_movement": -0.02}
+        assert map_features_to_columns(raw, side="home")["odds_movement"] == -0.02
+        assert map_features_to_columns(raw, side="away")["odds_movement"] == -0.02
+
+    def test_goal_difference_mapped_or_none(self):
+        assert map_features_to_columns({"goal_difference": 7})["goal_difference"] == 7
+        assert map_features_to_columns({})["goal_difference"] is None
+
+    def test_opponent_strength_stays_none(self):
+        assert map_features_to_columns({})["opponent_strength"] is None
+
+    def test_invalid_side_raises(self):
+        with pytest.raises(ValueError):
+            map_features_to_columns({}, side="invalid")

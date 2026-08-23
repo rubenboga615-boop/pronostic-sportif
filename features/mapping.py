@@ -40,6 +40,7 @@ DIRECT_MAPPING: dict[str, str] = {
     "odds_movement": "odds_movement",
     # standings.py
     "league_position": "league_position",
+    "goal_difference": "goal_difference",
     # injuries.py (indisponible tant que availability est vide)
     "injury_impact": "injury_impact",
 }
@@ -56,7 +57,7 @@ UNMAPPED_KEYS: set[str] = {
     "goals_for_avg_10", "goals_against_avg_10",
     "home_goals_for_avg", "home_goals_against_avg",
     "away_goals_for_avg", "away_goals_against_avg",
-    "home_rest_days", "away_rest_days", "rest_days_difference",
+    "home_elo", "away_elo", "rest_days_difference",
     "comparable_teams", "opponent_elo_avg_5",
 }
 
@@ -65,22 +66,45 @@ UNMAPPED_KEYS: set[str] = {
 # À revoir si le schéma ajoute des colonnes dédiées.
 
 
-def map_features_to_columns(raw_features: dict[str, Any]) -> dict[str, Any]:
+def map_features_to_columns(
+    raw_features: dict[str, Any],
+    side: str = "home",
+) -> dict[str, Any]:
     """Convertir les sorties brutes des modules en un dictionnaire aligné sur
     les colonnes de ``Feature``.
 
     Args:
         raw_features: dict plat regroupant les sorties des modules de features.
+        side: ``"home"`` ou ``"away"``, indique pour quelle ligne équipe du match
+            on mappe (choisit ``rest_days`` et ``elo_rating``). La valeur
+            ``odds_movement``, par match, est reportée à l'identique sur les
+            deux lignes (duplication documentée).
 
     Returns:
         dict dont les clés sont des colonnes du modèle ``Feature``. Les colonnes
         sans source disponible valent ``None``.
+
+    Raises:
+        ValueError: si ``side`` n'est ni ``"home"`` ni ``"away"``.
     """
+    if side not in ("home", "away"):
+        raise ValueError(f"side doit être 'home' ou 'away', reçu : {side!r}")
+
     mapped: dict[str, Any] = {}
 
     for key, column in DIRECT_MAPPING.items():
         if key in raw_features and raw_features[key] is not None:
             mapped[column] = raw_features[key]
+
+    # rest_days : côté dépendant
+    rest_key = "home_rest_days" if side == "home" else "away_rest_days"
+    if raw_features.get(rest_key) is not None:
+        mapped["rest_days"] = raw_features[rest_key]
+
+    # elo_rating : côté dépendant (pré-match uniquement)
+    elo_key = "home_elo" if side == "home" else "away_elo"
+    if raw_features.get(elo_key) is not None:
+        mapped["elo_rating"] = raw_features[elo_key]
 
     # Colonnes du modèle sans correspondance directe : explicitement None
     # (jamais remplacées par une valeur valide par défaut).
@@ -91,8 +115,6 @@ def map_features_to_columns(raw_features: dict[str, Any]) -> dict[str, Any]:
         "injury_impact",
         "opponent_strength",
         "goal_difference",
-        "elo_rating",
-        "rest_days",
         "data_completeness",
     ):
         mapped.setdefault(column, None)
