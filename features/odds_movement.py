@@ -7,7 +7,7 @@ from loguru import logger
 def calculate_odds_movement(
     odds_data: pd.DataFrame,
     match_id: int,
-    market: str = "1n2",
+    market: str = "1N2",
 ) -> dict:
     """Calculer le mouvement des cotes pour un match.
     
