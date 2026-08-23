@@ -7,12 +7,14 @@ from features.mapping import map_features_to_columns
 from features.odds_movement import calculate_odds_movement
 
 
-def _odds_frame(market: str) -> pd.DataFrame:
-    """Deux captures de cotes pour un même match/marché."""
+def _odds_frame(market: str, selection: str = "home") -> pd.DataFrame:
+    """Paire ouverture/clôture (B365 / B365_close) pour un match/marché/sélection."""
     return pd.DataFrame({
         "match_id": [1, 1],
         "market": [market, market],
-        "selection": ["home", "home"],
+        "selection": [selection, selection],
+        "bookmaker": ["B365", "B365_close"],
+        "is_closing": [0, 1],
         "odds": [2.0, 1.8],
         "captured_at": pd.to_datetime(["2024-01-01", "2024-01-02"]),
     })

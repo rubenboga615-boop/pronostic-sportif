@@ -31,6 +31,7 @@ data/backups/
 data/cache/
 data/*.db
 data/*.sqlite
+data/*.bak
 
 # Logs
 logs/

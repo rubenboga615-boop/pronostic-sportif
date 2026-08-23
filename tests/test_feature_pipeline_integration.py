@@ -56,15 +56,17 @@ def populated_db():
         target = add_match(t1, t2, datetime(2024, 3, 1), None, None)
         session.flush()
 
-        # Deux captures de cotes pour le match cible (2.0 -> 1.8).
+        # Paire ouverture/clôture (B365 -> B365_close) pour le match cible (2.0 -> 1.8).
         session.add_all([
             OddsSnapshot(
                 match_id=target.id, bookmaker="B365", market="1N2",
-                selection="home", odds=2.0, captured_at=datetime(2024, 2, 1),
+                selection="home", odds=2.0, is_closing=False,
+                captured_at=datetime(2024, 2, 1),
             ),
             OddsSnapshot(
-                match_id=target.id, bookmaker="B365", market="1N2",
-                selection="home", odds=1.8, captured_at=datetime(2024, 2, 28),
+                match_id=target.id, bookmaker="B365_close", market="1N2",
+                selection="home", odds=1.8, is_closing=True,
+                captured_at=datetime(2024, 2, 28),
             ),
         ])
         session.commit()
@@ -119,6 +121,26 @@ class TestRunFeaturePipeline:
             assert away.goal_difference == 0
             # elo_rating : T1 plus fort (3 victoires) -> supérieur à T2.
             assert home.elo_rating > away.elo_rating
+        finally:
+            session.close()
+
+    def test_target_odds_movement(self, populated_db):
+        run_feature_pipeline()
+        session = SessionLocal()
+        try:
+            home = (
+                session.query(Feature)
+                .filter_by(match_id=populated_db["target_id"], team_id=populated_db["t1"])
+                .first()
+            )
+            away = (
+                session.query(Feature)
+                .filter_by(match_id=populated_db["target_id"], team_id=populated_db["t2"])
+                .first()
+            )
+            # Ouverture 2.0 -> clôture 1.8 pour la sélection home, dupliquée sur les 2 lignes.
+            assert home.odds_movement == pytest.approx((1.8 - 2.0) / 2.0)
+            assert away.odds_movement == pytest.approx((1.8 - 2.0) / 2.0)
         finally:
             session.close()
 

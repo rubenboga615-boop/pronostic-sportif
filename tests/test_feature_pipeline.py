@@ -40,11 +40,13 @@ def _target_match() -> pd.Series:
 
 
 def _odds_df() -> pd.DataFrame:
-    """Deux captures de cotes pour le match cible (2.0 -> 1.8)."""
+    """Paire ouverture/clôture (B365 -> B365_close) pour le match cible (2.0 -> 1.8)."""
     return pd.DataFrame({
         "match_id": [100, 100],
         "market": ["1N2", "1N2"],
         "selection": ["home", "home"],
+        "bookmaker": ["B365", "B365_close"],
+        "is_closing": [0, 1],
         "odds": [2.0, 1.8],
         "captured_at": pd.to_datetime(["2024-02-01", "2024-02-28"]),
     })

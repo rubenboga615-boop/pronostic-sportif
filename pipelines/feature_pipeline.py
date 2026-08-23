@@ -39,7 +39,8 @@ def run_feature_pipeline() -> dict[str, int]:
             session.get_bind(),
         )
         odds_df = pd.read_sql_query(
-            "SELECT match_id, market, selection, odds, captured_at FROM odds_snapshots",
+            "SELECT match_id, market, selection, odds, captured_at, bookmaker, is_closing "
+            "FROM odds_snapshots",
             session.get_bind(),
         )
         matches_df["match_date"] = pd.to_datetime(matches_df["match_date"])
