@@ -8,8 +8,8 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 
 ## État Git
 - Branche : `master`
-- Working tree : **non propre** (3 modifications non commitées, voir § Modifications non commitées)
-- Dernier commit : `0605122 perf: add indexes for SQLite queries`
+- Working tree : **propre**
+- Dernier commit : `7cdf7ee feat: prepare feature mapping and continuity docs`
 
 ## Travaux terminés
 - **Foreign keys SQLite activées** via listener SQLAlchemy sur l'événement `connect` (commit `3b14add`).
@@ -18,23 +18,21 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 - **94 tests passent** (88 initiaux + 6 nouveaux sur le mapping).
 - **Test en mémoire du match 68** (Nottingham Forest vs Brentford, 2023-10-01) validé :
   anti-fuite vérifiée (67 matchs antérieurs, 693 exclus), `form_points_5=7`, `rest_days=8`, `league_position=12`.
-- **Correctif `odds_movement`** : marché par défaut aligné sur `"1N2"` (non commité).
+- **Correctif `odds_movement`** : marché par défaut aligné sur `"1N2"` (committé dans `7cdf7ee`).
 
 ## Travaux en cours
-- Valider le **mapping des features** (`features/mapping.py`, non commité).
+- Valider le **mapping des features** (`features/mapping.py`, committé, restant à valider pour la persistance).
 - Décider la **granularité** des valeurs par match vs par équipe (`rest_days`, `odds_movement`).
 - Persistance des features dans la table `features` : **pas encore réalisée**.
 
 ## Blocages / données indisponibles
 - **xG** : table `xg_match_stats` vide (source Understat non chargée).
 - **Blessures** : table `availability` vide (source non collectée).
-- `odds_movement` corrigé mais **non commité**.
+- `odds_movement` corrigé et committé.
 - Mapping non validé pour la persistance.
 
 ## Modifications non commitées (au 2026-08-23)
-- `M  features/odds_movement.py` — défaut marché `"1n2"` → `"1N2"`.
-- `?? features/mapping.py` — nouveau module de mapping.
-- `?? tests/test_features_mapping.py` — 6 nouveaux tests.
+Aucune (working tree propre).
 
 ## Sauvegardes
 - `backups/pronostic_avant_indexes.db` (avant ajout des index, integrity_check ok).
