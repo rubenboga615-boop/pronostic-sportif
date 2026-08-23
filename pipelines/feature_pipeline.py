@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from app.database import SessionLocal
 from app.models import Feature
 from features.elo import DEFAULT_ELO, update_elo
 from features.form import calculate_form_features
@@ -16,23 +17,49 @@ from features.shots import calculate_shots_features
 from features.standings import calculate_standings, get_team_position
 
 
-def run_feature_pipeline() -> None:
-    """Exécuter le pipeline de calcul des features.
-    
-    Étapes :
-    1. Calculer les features de forme
-    2. Calculer les features domicile/extérieur
-    3. Calculer les features xG
-    4. Calculer les features de tirs
-    5. Calculer le classement
-    6. Calculer les ratings Elo
-    7. Calculer les jours de repos
-    8. Calculer l'impact des blessures
-    9. Calculer le mouvement des cotes
+def run_feature_pipeline() -> dict[str, int]:
+    """Calculer et persister les features de tous les matchs (idempotent).
+
+    Charge les matchs (ordre chronologique ``match_date`` puis ``id``) et les
+    cotes, calcule les features via :func:`compute_match_features` en ne
+    fournissant que l'historique strictement antérieur (anti-fuite), puis
+    persiste deux lignes par match via :func:`persist_match_features`.
+
+    Transaction : un seul ``commit`` en fin de traitement ; ``rollback`` puis
+    re-levée de l'exception en cas d'erreur ; ``close`` toujours en ``finally``.
     """
     logger.info("=== Début du pipeline de features ===")
-    # TODO: implémenter chaque étape
-    logger.info("=== Pipeline de features terminé ===")
+    session = SessionLocal()
+    try:
+        matches_df = pd.read_sql_query(
+            "SELECT id, competition_id, match_date, home_team_id, away_team_id, "
+            "home_goals, away_goals, home_shots, away_shots, "
+            "home_shots_on_target, away_shots_on_target "
+            "FROM matches ORDER BY match_date, id",
+            session.get_bind(),
+        )
+        odds_df = pd.read_sql_query(
+            "SELECT match_id, market, selection, odds, captured_at FROM odds_snapshots",
+            session.get_bind(),
+        )
+        matches_df["match_date"] = pd.to_datetime(matches_df["match_date"])
+
+        processed = 0
+        for _, match in matches_df.iterrows():
+            # Anti-fuite : uniquement l'historique strictement antérieur.
+            prior = matches_df[matches_df["match_date"] < match["match_date"]]
+            cols = compute_match_features(match, prior, odds_df)
+            persist_match_features(session, match, cols["home"], cols["away"])
+            processed += 1
+
+        session.commit()
+        logger.info(f"=== Pipeline terminé : {processed} matchs traités ===")
+        return {"matches_processed": processed}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def compute_match_features(
