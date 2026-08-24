@@ -3,6 +3,11 @@
 Construit, à partir des features des deux équipes et de la moyenne de buts de la
 ligue, la liste des prédictions des marchés 1N2, Double chance, Over/Under
 (0.5/1.5/2.5/3.5) et BTTS, sans aucune écriture en base.
+
+Les fonctions canoniques de ``market_derivation`` produisent des noms internes
+(``"1n2"``, ``"home_win"``, ``"btts"``, …). Ce module les mappe vers un contrat
+public cohérent avec ``odds_snapshots`` et les résultats, via
+:func:`normalize_prediction`.
 """
 
 from __future__ import annotations
@@ -20,6 +25,46 @@ from models.poisson import compute_score_matrix, estimate_lambda
 
 # Lignes Over/Under officielles de la Phase 1 (match entier).
 OVER_UNDER_LINES: tuple[float, ...] = (0.5, 1.5, 2.5, 3.5)
+
+# ── Contrat public des identifiants de marchés (Prediction / settlement) ──
+
+# Marchés publics du contrat (Phase 1, match entier).
+PUBLIC_MARKETS: frozenset[str] = frozenset({"1N2", "double_chance", "over_under", "BTTS"})
+
+# Sélections publiques par marché.
+PUBLIC_SELECTIONS: dict[str, frozenset[str]] = {
+    "1N2": frozenset({"home", "draw", "away"}),
+    "double_chance": frozenset({"home_or_draw", "home_or_away", "draw_or_away"}),
+    "over_under": frozenset(
+        {f"over_{line}" for line in OVER_UNDER_LINES}
+        | {f"under_{line}" for line in OVER_UNDER_LINES}
+    ),
+    "BTTS": frozenset({"yes", "no"}),
+}
+
+# Mapping nom interne (market_derivation) -> contrat public.
+MARKET_TO_PUBLIC: dict[str, str] = {"1n2": "1N2", "btts": "BTTS"}
+SELECTION_TO_PUBLIC: dict[str, str] = {"home_win": "home", "away_win": "away"}
+
+# Réverses (contrat public -> nom interne), utiles pour le settlement.
+PUBLIC_TO_MARKET: dict[str, str] = {v: k for k, v in MARKET_TO_PUBLIC.items()}
+PUBLIC_TO_SELECTION: dict[str, str] = {v: k for k, v in SELECTION_TO_PUBLIC.items()}
+
+
+def normalize_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
+    """Mapper une prédiction interne vers le contrat public.
+
+    ``market`` et ``selection`` sont mappés vers leurs identifiants publics ;
+    ``probability`` et ``fair_odds`` sont conservés à l'identique.
+    """
+    return {
+        "market": MARKET_TO_PUBLIC.get(prediction["market"], prediction["market"]),
+        "selection": SELECTION_TO_PUBLIC.get(
+            prediction["selection"], prediction["selection"]
+        ),
+        "probability": prediction["probability"],
+        "fair_odds": prediction["fair_odds"],
+    }
 
 
 def estimate_match_lambdas(
@@ -79,7 +124,8 @@ def build_match_markets(
 
     Returns:
         ``list[dict]`` de 16 prédictions au format
-        ``{"market", "selection", "probability", "fair_odds"}``.
+        ``{"market", "selection", "probability", "fair_odds"}``, avec les
+        identifiants **publics** (``"1N2"``, ``"home"``, ``"BTTS"``, …).
 
     Raises:
         ValueError: si ``league_avg_goals`` n'est pas strictement positif.
@@ -99,7 +145,8 @@ def build_match_markets(
     for line in OVER_UNDER_LINES:
         markets.extend(derive_over_under(score_matrix, line))
     markets.extend(derive_btts(score_matrix))
-    return markets
+
+    return [normalize_prediction(p) for p in markets]
 
 
 def _neutral(value: Any, league_avg_goals: float) -> float:

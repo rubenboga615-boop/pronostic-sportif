@@ -34,7 +34,7 @@ class TestBuildMatchMarkets:
                 assert p["fair_odds"] == 999.0
 
     def test_1n2_sum(self, markets):
-        s = sum(p["probability"] for p in markets if p["market"] == "1n2")
+        s = sum(p["probability"] for p in markets if p["market"] == "1N2")
         assert s == pytest.approx(1.0, abs=1e-3)
 
     @pytest.mark.parametrize("line", [0.5, 1.5, 2.5, 3.5])
@@ -47,7 +47,7 @@ class TestBuildMatchMarkets:
         assert s == pytest.approx(1.0, abs=1e-3)
 
     def test_btts_sum(self, markets):
-        s = sum(p["probability"] for p in markets if p["market"] == "btts")
+        s = sum(p["probability"] for p in markets if p["market"] == "BTTS")
         assert s == pytest.approx(1.0, abs=1e-3)
 
     def test_fallback_null_features(self):
@@ -85,22 +85,22 @@ class TestBuildMatchMarkets:
 
     def test_market_and_selection_names(self, markets):
         assert {p["market"] for p in markets} == {
-            "1n2",
+            "1N2",
             "double_chance",
             "over_under",
-            "btts",
+            "BTTS",
         }
-        assert {p["selection"] for p in markets if p["market"] == "1n2"} == {
-            "home_win",
+        assert {p["selection"] for p in markets if p["market"] == "1N2"} == {
+            "home",
             "draw",
-            "away_win",
+            "away",
         }
         assert {p["selection"] for p in markets if p["market"] == "double_chance"} == {
             "home_or_draw",
             "home_or_away",
             "draw_or_away",
         }
-        assert {p["selection"] for p in markets if p["market"] == "btts"} == {"yes", "no"}
+        assert {p["selection"] for p in markets if p["market"] == "BTTS"} == {"yes", "no"}
         ou = {p["selection"] for p in markets if p["market"] == "over_under"}
         expected_ou = {f"over_{l}" for l in OVER_UNDER_LINES} | {
             f"under_{l}" for l in OVER_UNDER_LINES
