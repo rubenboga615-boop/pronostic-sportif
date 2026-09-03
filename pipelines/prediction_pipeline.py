@@ -7,6 +7,7 @@ from loguru import logger
 
 from app.models import Match, Prediction
 from models.market_assembly import PUBLIC_MARKETS, PUBLIC_SELECTIONS
+from models.prediction_context import build_match_predictions
 
 
 def persist_predictions(
@@ -112,6 +113,21 @@ def _validate_predictions(
         validated.append(item)
 
     return validated
+
+
+def generate_match_predictions(
+    session,
+    match_id: int,
+    model_version: str = "poisson-v1",
+) -> list[Prediction]:
+    """Générer et persister les prédictions d'un match (anti-fuite, idempotent).
+
+    Enchaîne : contexte anti-fuite (``build_match_predictions``) → persistance
+    idempotente (``persist_predictions``). Un second appel sur le même match met
+    à jour les lignes existantes sans créer de doublon.
+    """
+    predictions = build_match_predictions(session, match_id)
+    return persist_predictions(session, match_id, model_version, predictions)
 
 
 def run_prediction_pipeline() -> None:
