@@ -1,5 +1,6 @@
 """Pipeline de génération de prédictions."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -128,6 +129,48 @@ def generate_match_predictions(
     """
     predictions = build_match_predictions(session, match_id)
     return persist_predictions(session, match_id, model_version, predictions)
+
+
+def generate_predictions_for_matches(
+    session,
+    match_ids: Sequence[int],
+    model_version: str = "poisson-v1",
+) -> dict[str, Any]:
+    """Générer et persister les prédictions pour une liste explicite de matchs.
+
+    Transaction indépendante par match : chaque ``generate_match_predictions``
+    est commitée individuellement. Une erreur sur un match n'affecte pas les
+    autres. Les exceptions ne sont jamais masquées.
+
+    Args:
+        session: Session SQLAlchemy.
+        match_ids: Liste explicite des ``match_id`` à traiter.
+        model_version: Version du modèle (défaut ``"poisson-v1"``).
+
+    Returns:
+        ``{``
+            ``"succeeded": [match_id, ...],``
+            ``"failed": [{"match_id": int, "error": str}, ...],``
+            ``"predictions_created_or_updated": int,``
+        ``}``
+    """
+    succeeded: list[int] = []
+    failed: list[dict[str, Any]] = []
+    total_predictions = 0
+
+    for match_id in match_ids:
+        try:
+            results = generate_match_predictions(session, match_id, model_version)
+            succeeded.append(match_id)
+            total_predictions += len(results)
+        except Exception as exc:
+            failed.append({"match_id": match_id, "error": str(exc)})
+
+    return {
+        "succeeded": succeeded,
+        "failed": failed,
+        "predictions_created_or_updated": total_predictions,
+    }
 
 
 def run_prediction_pipeline() -> None:
