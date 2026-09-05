@@ -1,0 +1,275 @@
+"""Tests du pipeline de prédiction intégré (base temporaire)."""
+
+from datetime import datetime
+
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
+
+from app.models import Base, Competition, Feature, Match, Prediction, Team
+from pipelines.prediction_pipeline import (
+    _select_matches_ready_for_prediction,
+    generate_predictions_for_matches,
+    run_prediction_pipeline,
+)
+
+ORIG_DB = "data/pronostic.db"
+
+
+def _make_db(tmp_path):
+    """Créer une base temporaire avec schéma complet."""
+    db_path = tmp_path / "test_pipeline.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    Base.metadata.create_all(bind=engine)
+    return engine
+
+
+def _seed(engine, n_matches=3):
+    """Préparer n matchs avec historique + features. Retourne (session, match_ids)."""
+    session = Session(engine)
+    comp = Competition(name="L", country="C", provider_code="TEST")
+    session.add(comp)
+    session.flush()
+
+    home = Team(canonical_name="Home", provider="t")
+    away = Team(canonical_name="Away", provider="t")
+    session.add_all([home, away])
+    session.flush()
+
+    # Historique pour la moyenne de la ligue
+    for i in range(n_matches + 5):
+        m = Match(
+            competition_id=comp.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            match_date=datetime(2024, 1, 1 + i),
+            home_goals=2,
+            away_goals=1,
+            provider="t",
+        )
+        session.add(m)
+    session.flush()
+
+    # Matchs cibles + features
+    match_ids = []
+    for i in range(n_matches):
+        m = Match(
+            competition_id=comp.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            match_date=datetime(2025, 6, 1 + i),
+            home_goals=0,
+            away_goals=0,
+            provider="t",
+        )
+        session.add(m)
+        session.flush()
+        match_ids.append(m.id)
+
+        fh = Feature(match_id=m.id, team_id=home.id, goals_for_avg_5=1.5, goals_against_avg_5=0.8)
+        fa = Feature(match_id=m.id, team_id=away.id, goals_for_avg_5=1.0, goals_against_avg_5=1.2)
+        session.add_all([fh, fa])
+
+    session.commit()
+    return session, match_ids
+
+
+class TestSelectMatchesReady:
+    def test_selects_matches_with_features(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+        session.close()
+
+        with Session(engine) as s:
+            result = _select_matches_ready_for_prediction(s)
+        assert sorted(result) == sorted(match_ids)
+
+    def test_excludes_match_without_features(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+
+        # Ajouter un match sans features
+        comp = session.query(Competition).first()
+        home = session.query(Team).first()
+        away = session.query(Team).all()[1]
+        m = Match(
+            competition_id=comp.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            match_date=datetime(2025, 7, 1),
+            provider="t",
+        )
+        session.add(m)
+        session.commit()
+        bad_id = m.id
+        session.close()
+
+        with Session(engine) as s:
+            result = _select_matches_ready_for_prediction(s)
+        assert bad_id not in result
+        assert sorted(result) == sorted(match_ids)
+
+    def test_excludes_match_without_date(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+
+        comp = session.query(Competition).first()
+        home = session.query(Team).first()
+        away = session.query(Team).all()[1]
+        m = Match(
+            competition_id=comp.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            match_date=None,
+            provider="t",
+        )
+        session.add(m)
+        session.flush()
+        fh = Feature(match_id=m.id, team_id=home.id, goals_for_avg_5=1.0, goals_against_avg_5=1.0)
+        fa = Feature(match_id=m.id, team_id=away.id, goals_for_avg_5=1.0, goals_against_avg_5=1.0)
+        session.add_all([fh, fa])
+        session.commit()
+        bad_id = m.id
+        session.close()
+
+        with Session(engine) as s:
+            result = _select_matches_ready_for_prediction(s)
+        assert bad_id not in result
+
+    def test_empty_database(self, tmp_path):
+        engine = _make_db(tmp_path)
+        with Session(engine) as s:
+            result = _select_matches_ready_for_prediction(s)
+        assert result == []
+
+
+class TestRunPredictionPipeline:
+    def test_full_pipeline_creates_predictions(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+        session.close()
+
+        report = run_prediction_pipeline(engine=engine)
+
+        assert report["predictions_created_or_updated"] == len(match_ids) * 16
+        assert len(report["succeeded"]) == len(match_ids)
+        assert report["failed"] == []
+
+        with Session(engine) as s:
+            assert s.query(Prediction).count() == len(match_ids) * 16
+
+    def test_pipeline_idempotent(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+        session.close()
+
+        run_prediction_pipeline(engine=engine)
+        report2 = run_prediction_pipeline(engine=engine)
+
+        assert report2["predictions_created_or_updated"] == len(match_ids) * 16
+        assert report2["failed"] == []
+
+        with Session(engine) as s:
+            assert s.query(Prediction).count() == len(match_ids) * 16
+            dupes = s.execute(text(
+                "SELECT match_id, market, selection, COUNT(*) FROM predictions "
+                "GROUP BY match_id, market, selection HAVING COUNT(*) > 1"
+            )).fetchall()
+            assert dupes == []
+
+    def test_pipeline_partial_failure(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine, n_matches=2)
+
+        # Ajouter un match avec features mais dans une 2e compétition
+        # sans historique → _compute_league_avg_goals va échouer
+        comp2 = Competition(name="L2", country="C2", provider_code="TEST2")
+        session.add(comp2)
+        session.flush()
+
+        home = session.query(Team).first()
+        away = session.query(Team).all()[1]
+        bad_match = Match(
+            competition_id=comp2.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            match_date=datetime(2025, 8, 1),
+            provider="t",
+        )
+        session.add(bad_match)
+        session.flush()
+        fh = Feature(match_id=bad_match.id, team_id=home.id, goals_for_avg_5=1.0, goals_against_avg_5=1.0)
+        fa = Feature(match_id=bad_match.id, team_id=away.id, goals_for_avg_5=1.0, goals_against_avg_5=1.0)
+        session.add_all([fh, fa])
+        session.commit()
+        bad_id = bad_match.id
+        session.close()
+
+        report = run_prediction_pipeline(engine=engine)
+
+        assert report["predictions_created_or_updated"] == len(match_ids) * 16
+        assert len(report["succeeded"]) == len(match_ids)
+        assert len(report["failed"]) == 1
+        assert report["failed"][0]["match_id"] == bad_id
+
+    def test_pipeline_no_matches(self, tmp_path):
+        engine = _make_db(tmp_path)
+        report = run_prediction_pipeline(engine=engine)
+
+        assert report["predictions_created_or_updated"] == 0
+        assert report["succeeded"] == []
+        assert report["failed"] == []
+
+    def test_tables_unchanged(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+        n_matches = session.query(Match).count()
+        n_features = session.query(Feature).count()
+        n_odds = session.execute(text("SELECT COUNT(*) FROM odds_snapshots")).scalar()
+        session.close()
+
+        run_prediction_pipeline(engine=engine)
+
+        with Session(engine) as s:
+            assert s.query(Match).count() == n_matches
+            assert s.query(Feature).count() == n_features
+            assert s.execute(text("SELECT COUNT(*) FROM odds_snapshots")).scalar() == n_odds
+
+    def test_model_version_used(self, tmp_path):
+        engine = _make_db(tmp_path)
+        session, match_ids = _seed(engine)
+        session.close()
+
+        run_prediction_pipeline(engine=engine, model_version="test-v2")
+
+        with Session(engine) as s:
+            versions = s.execute(text(
+                "SELECT DISTINCT model_version FROM predictions"
+            )).fetchall()
+            assert len(versions) == 1
+            assert versions[0][0] == "test-v2"
+
+
+class TestOriginalDatabaseUntouched:
+    def test_sha_size_mtime_unchanged(self):
+        import hashlib
+        import os
+
+        sha_before = hashlib.sha256(open(ORIG_DB, "rb").read()).hexdigest()
+        size_before = os.path.getsize(ORIG_DB)
+        mtime_before = os.path.getmtime(ORIG_DB)
+
+        # Exécuter le pipeline sur une DB temporaire
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=engine)
+        session, _ = _seed(engine, n_matches=1)
+        session.close()
+        run_prediction_pipeline(engine=engine)
+
+        sha_after = hashlib.sha256(open(ORIG_DB, "rb").read()).hexdigest()
+        size_after = os.path.getsize(ORIG_DB)
+        mtime_after = os.path.getmtime(ORIG_DB)
+
+        assert sha_before == sha_after
+        assert size_before == size_after
+        assert mtime_before == mtime_after

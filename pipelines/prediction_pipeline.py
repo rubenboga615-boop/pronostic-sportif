@@ -173,44 +173,97 @@ def generate_predictions_for_matches(
     }
 
 
-def run_prediction_pipeline() -> None:
-    """Exécuter le pipeline de prédiction.
-    
-    Étapes :
-    1. Charger les matchs à venir
-    2. Calculer les features
-    3. Charger le modèle
-    4. Générer les prédictions
-    5. Dériver les marchés
-    6. Sauvegarder les résultats
+def _select_matches_ready_for_prediction(session) -> list[int]:
+    """Sélectionner les matchs pour lesquels générer des prédictions.
+
+    Retourne les ``match_id`` des matchs qui ont :
+    - une ``match_date`` renseignée
+    - une ``Feature`` domicile **et** une ``Feature`` extérieure
+
+    Les résultats sont triés par date croissante puis ``id``.
     """
+    from sqlalchemy import orm
+
+    from app.models import Feature
+
+    fh = orm.aliased(Feature)
+    fa = orm.aliased(Feature)
+
+    rows = (
+        session.query(Match.id)
+        .join(fh, (fh.match_id == Match.id) & (fh.team_id == Match.home_team_id))
+        .join(fa, (fa.match_id == Match.id) & (fa.team_id == Match.away_team_id))
+        .filter(Match.match_date.isnot(None))
+        .order_by(Match.match_date, Match.id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def run_prediction_pipeline(
+    engine=None,
+    model_version: str = "poisson-v1",
+) -> dict[str, Any]:
+    """Exécuter le pipeline de prédiction.
+
+    Sélectionne les matchs prêts (features disponibles), génère les prédictions
+    via ``generate_predictions_for_matches``, et retourne un rapport structuré.
+
+    Transaction indépendante par match (via ``generate_predictions_for_matches``).
+
+    Args:
+        engine: Moteur SQLAlchemy. Si ``None``, utilise ``app.database.engine``.
+        model_version: Version du modèle (défaut ``"poisson-v1"``).
+
+    Returns:
+        Rapport ``{succeeded, failed, predictions_created_or_updated}``.
+    """
+    from app.database import SessionLocal
+
+    if engine is None:
+        from app.database import engine as default_engine
+
+        engine = default_engine
+
     logger.info("=== Début du pipeline de prédiction ===")
 
-    # Étape 1 : Matchs à venir
-    logger.info("Étape 1 : Chargement des matchs à venir...")
-    # TODO: implémenter
+    session = SessionLocal(bind=engine)
+    try:
+        # Étape 1 : Sélection des matchs prêts
+        logger.info("Étape 1 : Sélection des matchs prêts...")
+        match_ids = _select_matches_ready_for_prediction(session)
+        logger.info(f"  {len(match_ids)} matchs sélectionnés")
 
-    # Étape 2 : Features
-    logger.info("Étape 2 : Calcul des features...")
-    # TODO: implémenter
+        if not match_ids:
+            logger.info("Aucun match à prédire.")
+            logger.info("=== Fin du pipeline de prédiction ===")
+            return {
+                "succeeded": [],
+                "failed": [],
+                "predictions_created_or_updated": 0,
+            }
 
-    # Étape 3 : Modèle
-    logger.info("Étape 3 : Chargement du modèle...")
-    # TODO: implémenter
+        # Étape 2 : Génération des prédictions
+        logger.info("Étape 2 : Génération des prédictions...")
+        report = generate_predictions_for_matches(session, match_ids, model_version)
 
-    # Étape 4 : Prédictions
-    logger.info("Étape 4 : Génération des prédictions...")
-    # TODO: implémenter
+        logger.info(
+            f"  {report['predictions_created_or_updated']} prédictions "
+            f"({len(report['succeeded'])} réussies, "
+            f"{len(report['failed'])} échouées)"
+        )
 
-    # Étape 5 : Dérivation des marchés
-    logger.info("Étape 5 : Dérivation des marchés...")
-    # TODO: implémenter avec models.market_derivation
+        if report["failed"]:
+            for f in report["failed"]:
+                logger.warning(f"  Match {f['match_id']} échoué : {f['error']}")
 
-    # Étape 6 : Sauvegarde
-    logger.info("Étape 6 : Sauvegarde des résultats...")
-    # TODO: implémenter
-
-    logger.info("=== Fin du pipeline de prédiction ===")
+        logger.info("=== Fin du pipeline de prédiction ===")
+        return report
+    except Exception:
+        logger.error("Erreur fatale dans le pipeline de prédiction")
+        raise
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":

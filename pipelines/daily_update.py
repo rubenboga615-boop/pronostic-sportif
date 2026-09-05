@@ -65,7 +65,9 @@ def _step_validate():
 
 
 def _step_predict():
-    pass
+    from pipelines.prediction_pipeline import run_prediction_pipeline
+
+    run_prediction_pipeline()
 
 
 def _step_backup():
