@@ -2,23 +2,26 @@
 
 import pandas as pd
 import pytest
-from features.form import calculate_form_features
-from features.rest_days import calculate_rest_days, calculate_rest_features
-from features.home_away import calculate_home_away_features
+
 from features.elo import calculate_elo_ratings, expected_score
+from features.form import calculate_form_features
+from features.home_away import calculate_home_away_features
+from features.rest_days import calculate_rest_days, calculate_rest_features
 
 
 @pytest.fixture
 def sample_matches():
     """Données de test."""
-    return pd.DataFrame({
-        "id": range(1, 11),
-        "home_team_id": [1, 2, 1, 3, 1, 2, 1, 3, 1, 2],
-        "away_team_id": [2, 1, 3, 1, 2, 3, 1, 2, 3, 1],
-        "home_goals": [2, 1, 0, 3, 1, 2, 0, 1, 2, 0],
-        "away_goals": [1, 1, 0, 1, 0, 1, 0, 0, 1, 0],
-        "match_date": pd.date_range("2024-01-01", periods=10, freq="7D"),
-    })
+    return pd.DataFrame(
+        {
+            "id": range(1, 11),
+            "home_team_id": [1, 2, 1, 3, 1, 2, 1, 3, 1, 2],
+            "away_team_id": [2, 1, 3, 1, 2, 3, 1, 2, 3, 1],
+            "home_goals": [2, 1, 0, 3, 1, 2, 0, 1, 2, 0],
+            "away_goals": [1, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+            "match_date": pd.date_range("2024-01-01", periods=10, freq="7D"),
+        }
+    )
 
 
 class TestFormFeatures:

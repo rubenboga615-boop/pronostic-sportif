@@ -1,7 +1,6 @@
 """Calcul des équipes comparables."""
 
 import pandas as pd
-from loguru import logger
 
 
 def find_comparable_teams(
@@ -11,14 +10,18 @@ def find_comparable_teams(
     n_teams: int = 5,
 ) -> list[int]:
     """Trouver les équipes de force comparable.
-    
+
     Utilise les résultats récents pour identifier des adversaires
     de niveau similaire.
     """
-    team_matches = matches_df[
-        ((matches_df["home_team_id"] == team_id) | (matches_df["away_team_id"] == team_id))
-        & (matches_df["match_date"] < match_date)
-    ].sort_values("match_date").tail(20)
+    team_matches = (
+        matches_df[
+            ((matches_df["home_team_id"] == team_id) | (matches_df["away_team_id"] == team_id))
+            & (matches_df["match_date"] < match_date)
+        ]
+        .sort_values("match_date")
+        .tail(20)
+    )
 
     if team_matches.empty:
         return []

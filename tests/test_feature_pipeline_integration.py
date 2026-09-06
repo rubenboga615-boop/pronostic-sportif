@@ -57,28 +57,46 @@ def populated_db():
         session.flush()
 
         # Paires ouverture/clôture (B365 -> B365_close) pour home (2.0->1.8) et away (5.0->4.0).
-        session.add_all([
-            OddsSnapshot(
-                match_id=target.id, bookmaker="B365", market="1N2",
-                selection="home", odds=2.0, is_closing=False,
-                captured_at=datetime(2024, 2, 1),
-            ),
-            OddsSnapshot(
-                match_id=target.id, bookmaker="B365_close", market="1N2",
-                selection="home", odds=1.8, is_closing=True,
-                captured_at=datetime(2024, 2, 28),
-            ),
-            OddsSnapshot(
-                match_id=target.id, bookmaker="B365", market="1N2",
-                selection="away", odds=5.0, is_closing=False,
-                captured_at=datetime(2024, 2, 1),
-            ),
-            OddsSnapshot(
-                match_id=target.id, bookmaker="B365_close", market="1N2",
-                selection="away", odds=4.0, is_closing=True,
-                captured_at=datetime(2024, 2, 28),
-            ),
-        ])
+        session.add_all(
+            [
+                OddsSnapshot(
+                    match_id=target.id,
+                    bookmaker="B365",
+                    market="1N2",
+                    selection="home",
+                    odds=2.0,
+                    is_closing=False,
+                    captured_at=datetime(2024, 2, 1),
+                ),
+                OddsSnapshot(
+                    match_id=target.id,
+                    bookmaker="B365_close",
+                    market="1N2",
+                    selection="home",
+                    odds=1.8,
+                    is_closing=True,
+                    captured_at=datetime(2024, 2, 28),
+                ),
+                OddsSnapshot(
+                    match_id=target.id,
+                    bookmaker="B365",
+                    market="1N2",
+                    selection="away",
+                    odds=5.0,
+                    is_closing=False,
+                    captured_at=datetime(2024, 2, 1),
+                ),
+                OddsSnapshot(
+                    match_id=target.id,
+                    bookmaker="B365_close",
+                    market="1N2",
+                    selection="away",
+                    odds=4.0,
+                    is_closing=True,
+                    captured_at=datetime(2024, 2, 28),
+                ),
+            ]
+        )
         session.commit()
 
         return {
@@ -99,11 +117,7 @@ class TestRunFeaturePipeline:
         run_feature_pipeline()
         session = SessionLocal()
         try:
-            rows = (
-                session.query(Feature)
-                .filter_by(match_id=populated_db["target_id"])
-                .all()
-            )
+            rows = session.query(Feature).filter_by(match_id=populated_db["target_id"]).all()
             assert len(rows) == 2
         finally:
             session.close()
@@ -159,11 +173,7 @@ class TestRunFeaturePipeline:
         run_feature_pipeline()
         session = SessionLocal()
         try:
-            count = (
-                session.query(Feature)
-                .filter_by(match_id=populated_db["target_id"])
-                .count()
-            )
+            count = session.query(Feature).filter_by(match_id=populated_db["target_id"]).count()
             assert count == 2
         finally:
             session.close()
@@ -210,8 +220,9 @@ class TestRunFeaturePipeline:
                 return getattr(self._inner, name)
 
         monkeypatch.setattr(
-            fp, "SessionLocal",
-            lambda: (instances.append(TrackingSession()) or instances[-1]),
+            fp,
+            "SessionLocal",
+            lambda: instances.append(TrackingSession()) or instances[-1],
         )
 
         # Succès : la session est fermée.

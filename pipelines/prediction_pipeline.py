@@ -74,10 +74,7 @@ def _validate_predictions(
     seen: dict[tuple[str, str], dict[str, Any]] = {}
 
     for pred in predictions:
-        missing = [
-            k for k in ("market", "selection", "probability", "fair_odds")
-            if k not in pred
-        ]
+        missing = [k for k in ("market", "selection", "probability", "fair_odds") if k not in pred]
         if missing:
             raise ValueError(f"Prédiction incomplète : champs manquants {missing}")
 
@@ -89,9 +86,7 @@ def _validate_predictions(
         if market not in PUBLIC_MARKETS:
             raise ValueError(f"Marché inconnu : {market!r}")
         if selection not in PUBLIC_SELECTIONS.get(market, frozenset()):
-            raise ValueError(
-                f"Sélection inconnue : {selection!r} pour le marché {market!r}"
-            )
+            raise ValueError(f"Sélection inconnue : {selection!r} pour le marché {market!r}")
         if probability is None or not (0.0 <= probability <= 1.0):
             raise ValueError(f"Probability hors [0, 1] : {probability!r}")
         if fair_odds is None or not (fair_odds > 0):
@@ -106,9 +101,7 @@ def _validate_predictions(
         key = (market, selection)
         if key in seen:
             if seen[key] != item:
-                raise ValueError(
-                    f"Doublons contradictoires pour {market}/{selection}"
-                )
+                raise ValueError(f"Doublons contradictoires pour {market}/{selection}")
             continue  # doublon identique : ignoré
         seen[key] = item
         validated.append(item)

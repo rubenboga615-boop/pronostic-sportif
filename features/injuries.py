@@ -1,7 +1,6 @@
 """Calcul de l'impact des blessures."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_injury_impact(
@@ -10,7 +9,7 @@ def calculate_injury_impact(
     match_id: int,
 ) -> float:
     """Calculer l'impact des blessures pour une équipe.
-    
+
     Utilise un score pondéré basé sur :
     - Le statut du joueur (titulaire, remplaçant)
     - Les minutes jouées
@@ -20,8 +19,7 @@ def calculate_injury_impact(
         return 0.0
 
     team_availability = availability_data[
-        (availability_data["team_id"] == team_id)
-        & (availability_data["match_id"] == match_id)
+        (availability_data["team_id"] == team_id) & (availability_data["match_id"] == match_id)
     ]
 
     if team_availability.empty:

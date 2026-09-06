@@ -10,11 +10,13 @@ from pipelines.feature_pipeline import persist_match_features
 
 
 def _match_series(match_id: int, home_team_id: int, away_team_id: int) -> pd.Series:
-    return pd.Series({
-        "id": match_id,
-        "home_team_id": home_team_id,
-        "away_team_id": away_team_id,
-    })
+    return pd.Series(
+        {
+            "id": match_id,
+            "home_team_id": home_team_id,
+            "away_team_id": away_team_id,
+        }
+    )
 
 
 def _cols(rest_days=None, elo_rating=None, goal_difference=None) -> dict:
@@ -88,9 +90,11 @@ class TestPersistMatchFeatures:
             # Seconde persistance avec des valeurs différentes.
             persist_match_features(session, match, _cols(rest_days=7), _cols(rest_days=3))
             session.commit()
-            home = session.query(Feature).filter_by(
-                match_id=m["match_id"], team_id=m["home_team_id"]
-            ).first()
+            home = (
+                session.query(Feature)
+                .filter_by(match_id=m["match_id"], team_id=m["home_team_id"])
+                .first()
+            )
             assert home.rest_days == 7
             assert session.query(Feature).filter_by(match_id=m["match_id"]).count() == 2
         finally:
@@ -108,12 +112,16 @@ class TestPersistMatchFeatures:
                 _cols(rest_days=10, elo_rating=1484.0),
             )
             session.commit()
-            home = session.query(Feature).filter_by(
-                match_id=m["match_id"], team_id=m["home_team_id"]
-            ).first()
-            away = session.query(Feature).filter_by(
-                match_id=m["match_id"], team_id=m["away_team_id"]
-            ).first()
+            home = (
+                session.query(Feature)
+                .filter_by(match_id=m["match_id"], team_id=m["home_team_id"])
+                .first()
+            )
+            away = (
+                session.query(Feature)
+                .filter_by(match_id=m["match_id"], team_id=m["away_team_id"])
+                .first()
+            )
             assert home.rest_days == 15
             assert home.elo_rating == pytest.approx(1516.0)
             assert away.rest_days == 10
@@ -130,9 +138,11 @@ class TestPersistMatchFeatures:
                 session, match, _cols(goal_difference=6), _cols(goal_difference=0)
             )
             session.commit()
-            home = session.query(Feature).filter_by(
-                match_id=m["match_id"], team_id=m["home_team_id"]
-            ).first()
+            home = (
+                session.query(Feature)
+                .filter_by(match_id=m["match_id"], team_id=m["home_team_id"])
+                .first()
+            )
             assert home.goal_difference == 6
             assert isinstance(home.goal_difference, int)
         finally:
@@ -163,9 +173,7 @@ class TestPersistMatchFeatures:
         try:
             match = _match_series(99999, 99998, 99997)
             with pytest.raises(IntegrityError):
-                persist_match_features(
-                    session, match, _cols(rest_days=15), _cols(rest_days=10)
-                )
+                persist_match_features(session, match, _cols(rest_days=15), _cols(rest_days=10))
                 session.commit()
         finally:
             session.rollback()

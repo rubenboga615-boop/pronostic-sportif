@@ -10,7 +10,6 @@ from pathlib import Path
 from app.config import settings
 from app.database import engine
 
-
 PRODUCTION_DB_PATH = Path("data/pronostic.db").resolve()
 
 

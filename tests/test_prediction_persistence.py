@@ -8,9 +8,7 @@ from app.models import Competition, Match, Prediction, Team
 from models.market_assembly import build_match_markets
 from pipelines.prediction_pipeline import persist_predictions
 
-PREDICTIONS = build_match_markets(
-    {"goals_for_avg_5": 1.5}, {"goals_against_avg_5": 1.2}, 1.4
-)
+PREDICTIONS = build_match_markets({"goals_for_avg_5": 1.5}, {"goals_against_avg_5": 1.2}, 1.4)
 
 
 @pytest.fixture
@@ -53,7 +51,8 @@ class TestPersistPredictions:
         persist_predictions(env["session"], env["match_id"], "v1", modified)
         assert env["session"].query(Prediction).count() == 16
         row = (
-            env["session"].query(Prediction)
+            env["session"]
+            .query(Prediction)
             .filter_by(
                 match_id=env["match_id"],
                 model_version="v1",

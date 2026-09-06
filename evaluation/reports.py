@@ -29,6 +29,7 @@ def generate_full_report(
 
     # Sauvegarder en JSON
     import json
+
     report_file = output_path / "evaluation_report.json"
     report_file.write_text(json.dumps(report, indent=2, default=str))
     logger.info(f"Rapport sauvegardé : {report_file}")

@@ -5,7 +5,7 @@ from loguru import logger
 
 def run_validation_pipeline() -> None:
     """Exécuter le pipeline de validation.
-    
+
     Étapes :
     1. Charger les données de test
     2. Générer les prédictions

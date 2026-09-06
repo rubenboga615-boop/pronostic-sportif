@@ -1,17 +1,14 @@
 """Tests de dérivation des marchés."""
 
-import numpy as np
 import pytest
-from models.poisson import compute_score_matrix
+
 from models.market_derivation import (
     derive_1n2,
+    derive_btts,
     derive_double_chance,
     derive_over_under,
-    derive_btts,
-    derive_first_half_markets,
-    derive_most_productive_half,
-    fair_odds,
 )
+from models.poisson import compute_score_matrix
 
 
 @pytest.fixture

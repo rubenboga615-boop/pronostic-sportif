@@ -5,9 +5,8 @@ Améliore le modèle de Poisson en corrigeant les petits scores
 """
 
 import numpy as np
-from scipy.optimize import minimize
-from scipy.stats import poisson
 from loguru import logger
+from scipy.stats import poisson
 
 
 def tau(x: int, y: int, lambda_: float, mu: float, rho: float) -> float:
@@ -59,7 +58,6 @@ def fit_dixon_coles(
     max_goals: int = 8,
 ) -> dict:
     """Entraîner le modèle Dixon-Coles."""
-    from models.poisson import compute_score_matrix
 
     logger.info("Entraînement Dixon-Coles en cours...")
 
@@ -74,8 +72,7 @@ def fit_dixon_coles(
 
     # Correction rho pour les petits scores
     observed_small = sum(
-        1 for h, a in zip(home_goals, away_goals)
-        if (h, a) in [(0, 0), (1, 0), (0, 1), (1, 1)]
+        1 for h, a in zip(home_goals, away_goals) if (h, a) in [(0, 0), (1, 0), (0, 1), (1, 1)]
     )
     expected_small = sum(
         poisson.pmf(h, lambda_home) * poisson.pmf(a, lambda_away)

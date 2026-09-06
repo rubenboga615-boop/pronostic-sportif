@@ -1,7 +1,6 @@
 """Calcul des statistiques de buts."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_goals_features(
@@ -11,13 +10,17 @@ def calculate_goals_features(
     window: int = 10,
 ) -> dict:
     """Calculer les statistiques de buts d'une équipe.
-    
+
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
-    team_matches = matches_df[
-        ((matches_df["home_team_id"] == team_id) | (matches_df["away_team_id"] == team_id))
-        & (matches_df["match_date"] < match_date)
-    ].sort_values("match_date").tail(window)
+    team_matches = (
+        matches_df[
+            ((matches_df["home_team_id"] == team_id) | (matches_df["away_team_id"] == team_id))
+            & (matches_df["match_date"] < match_date)
+        ]
+        .sort_values("match_date")
+        .tail(window)
+    )
 
     if team_matches.empty or len(team_matches) < 3:
         return {}

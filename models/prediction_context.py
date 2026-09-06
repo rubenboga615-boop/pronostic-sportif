@@ -53,9 +53,7 @@ def build_match_predictions(
     Retourne la liste au format ``{"market", "selection", "probability",
     "fair_odds"}`` avec les identifiants publics, sans écrire en base.
     """
-    _, home_features, away_features, league_avg_goals = _load_context(
-        session, target_match_id
-    )
+    _, home_features, away_features, league_avg_goals = _load_context(session, target_match_id)
     return build_match_markets(
         home_features,
         away_features,
@@ -123,9 +121,7 @@ def _compute_league_avg_goals(session, target_match: Match) -> float:
 
     rows = query.all()
     if not rows:
-        raise ValueError(
-            f"Aucun historique exploitable avant le match {target_match.id}"
-        )
+        raise ValueError(f"Aucun historique exploitable avant le match {target_match.id}")
 
     total_goals = sum(m.home_goals + m.away_goals for m in rows)
     return total_goals / (2.0 * len(rows))

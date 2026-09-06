@@ -100,9 +100,9 @@ def compute_match_features(
 
     for side, team_id in (("home", home_id), ("away", away_id)):
         # Sélection de cote selon le côté : home -> "home", away -> "away".
-        odds_movement = calculate_odds_movement(
-            odds_df, match_id, market="1N2", selection=side
-        )["odds_movement"]
+        odds_movement = calculate_odds_movement(odds_df, match_id, market="1N2", selection=side)[
+            "odds_movement"
+        ]
         raw = {
             # par sélection (home -> "home", away -> "away").
             "odds_movement": odds_movement,
@@ -137,9 +137,7 @@ def _compute_elo_before(prior_df: pd.DataFrame, team_id: int) -> float:
     ignorés. Retourne l'Elo courant (pré-match) de ``team_id``, ou ``DEFAULT_ELO``
     si aucun historique.
     """
-    team_ids = set(prior_df["home_team_id"].dropna()) | set(
-        prior_df["away_team_id"].dropna()
-    )
+    team_ids = set(prior_df["home_team_id"].dropna()) | set(prior_df["away_team_id"].dropna())
     ratings: dict[int, float] = {int(tid): DEFAULT_ELO for tid in team_ids}
     ratings.setdefault(team_id, DEFAULT_ELO)
 
@@ -188,11 +186,7 @@ def _upsert_feature(
     met à jour les colonnes présentes dans ``cols``. Sinon, crée une nouvelle
     ligne. Ne crée jamais de doublon.
     """
-    feature = (
-        session.query(Feature)
-        .filter_by(match_id=match_id, team_id=team_id)
-        .first()
-    )
+    feature = session.query(Feature).filter_by(match_id=match_id, team_id=team_id).first()
     if feature is None:
         feature = Feature(match_id=match_id, team_id=team_id, **cols)
         session.add(feature)

@@ -1,7 +1,6 @@
 """Calcul du classement de ligue."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_standings(
@@ -10,7 +9,7 @@ def calculate_standings(
     competition_id: int | None = None,
 ) -> pd.DataFrame:
     """Calculer le classement au moment d'un match donné.
-    
+
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
     relevant = matches_df[matches_df["match_date"] < match_date]
@@ -33,7 +32,15 @@ def calculate_standings(
 
         for team_id in [home_id, away_id]:
             if team_id not in standings:
-                standings[team_id] = {"played": 0, "won": 0, "drawn": 0, "lost": 0, "gf": 0, "ga": 0, "points": 0}
+                standings[team_id] = {
+                    "played": 0,
+                    "won": 0,
+                    "drawn": 0,
+                    "lost": 0,
+                    "gf": 0,
+                    "ga": 0,
+                    "points": 0,
+                }
 
         standings[home_id]["played"] += 1
         standings[away_id]["played"] += 1

@@ -1,7 +1,6 @@
 """Métriques d'évaluation du modèle de pronostic."""
 
 import numpy as np
-from loguru import logger
 
 
 def accuracy(y_true: list[str], y_pred: list[str]) -> float:
@@ -33,7 +32,7 @@ def calibration_curve(
     n_bins: int = 10,
 ) -> list[tuple[float, float, int]]:
     """Calculer la courbe de calibration.
-    
+
     Retourne une liste de (probabilité prédite, probabilité observée, nombre d'observations).
     """
     bins = np.linspace(0, 1, n_bins + 1)

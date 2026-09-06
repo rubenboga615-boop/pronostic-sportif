@@ -1,7 +1,6 @@
 """Modèle de prédiction pour la première mi-temps."""
 
-from loguru import logger
-from models.poisson import compute_score_matrix, estimate_lambda
+from models.poisson import compute_score_matrix
 
 
 def estimate_first_half_lambdas(
@@ -22,9 +21,7 @@ def predict_first_half(
     max_goals: int = 5,
 ) -> dict:
     """Prédire les buts de première mi-temps."""
-    lambda_home, lambda_away = estimate_first_half_lambdas(
-        home_ht_goals_avg, away_ht_goals_avg
-    )
+    lambda_home, lambda_away = estimate_first_half_lambdas(home_ht_goals_avg, away_ht_goals_avg)
 
     matrix = compute_score_matrix(lambda_home, lambda_away, max_goals=max_goals)
 

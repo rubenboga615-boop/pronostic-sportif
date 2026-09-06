@@ -5,7 +5,6 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
 
-
 engine = create_engine(
     settings.database_url,
     echo=settings.app_debug,
@@ -24,11 +23,13 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
     """Classe de base pour les modèles ORM."""
+
     pass
 
 

@@ -1,7 +1,6 @@
 """Calcul du mouvement des cotes."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_odds_movement(
@@ -28,9 +27,9 @@ def calculate_odds_movement(
         & (odds_data["selection"] == selection)
     ]
 
-    opening = match_odds[
-        (match_odds["bookmaker"] == "B365") & (match_odds["is_closing"] == 0)
-    ]["odds"]
+    opening = match_odds[(match_odds["bookmaker"] == "B365") & (match_odds["is_closing"] == 0)][
+        "odds"
+    ]
     closing = match_odds[
         (match_odds["bookmaker"] == "B365_close") & (match_odds["is_closing"] == 1)
     ]["odds"]

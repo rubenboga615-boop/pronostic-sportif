@@ -120,15 +120,23 @@ def _seed_candidates(engine):
 
     def add_features(match_id, *, with_home=True, with_away=True):
         if with_home:
-            session.add(Feature(
-                match_id=match_id, team_id=home.id,
-                goals_for_avg_5=1.5, goals_against_avg_5=0.8,
-            ))
+            session.add(
+                Feature(
+                    match_id=match_id,
+                    team_id=home.id,
+                    goals_for_avg_5=1.5,
+                    goals_against_avg_5=0.8,
+                )
+            )
         if with_away:
-            session.add(Feature(
-                match_id=match_id, team_id=away.id,
-                goals_for_avg_5=1.0, goals_against_avg_5=1.2,
-            ))
+            session.add(
+                Feature(
+                    match_id=match_id,
+                    team_id=away.id,
+                    goals_for_avg_5=1.0,
+                    goals_against_avg_5=1.2,
+                )
+            )
 
     # Historique strictement antérieur (moyenne de ligue), jamais sélectionné.
     for i in range(3):
@@ -189,28 +197,38 @@ def _seed_760_historical(engine):
     start = datetime(2023, 8, 11)
     matches = []
     for i in range(760):
-        matches.append(Match(
-            competition_id=comp.id,
-            home_team_id=home.id,
-            away_team_id=away.id,
-            match_date=start + timedelta(days=i),
-            home_goals=1 + (i % 3),
-            away_goals=i % 3,
-            provider="t",
-        ))
+        matches.append(
+            Match(
+                competition_id=comp.id,
+                home_team_id=home.id,
+                away_team_id=away.id,
+                match_date=start + timedelta(days=i),
+                home_goals=1 + (i % 3),
+                away_goals=i % 3,
+                provider="t",
+            )
+        )
     session.add_all(matches)
     session.flush()
 
     features = []
     for m in matches:
-        features.append(Feature(
-            match_id=m.id, team_id=home.id,
-            goals_for_avg_5=1.5, goals_against_avg_5=0.8,
-        ))
-        features.append(Feature(
-            match_id=m.id, team_id=away.id,
-            goals_for_avg_5=1.0, goals_against_avg_5=1.2,
-        ))
+        features.append(
+            Feature(
+                match_id=m.id,
+                team_id=home.id,
+                goals_for_avg_5=1.5,
+                goals_against_avg_5=0.8,
+            )
+        )
+        features.append(
+            Feature(
+                match_id=m.id,
+                team_id=away.id,
+                goals_for_avg_5=1.0,
+                goals_against_avg_5=1.2,
+            )
+        )
     session.add_all(features)
 
     session.commit()
@@ -363,9 +381,7 @@ class TestSelectMatchesReferenceDate:
         class _NoNow:
             @staticmethod
             def now(*args, **kwargs):
-                raise AssertionError(
-                    "datetime.now() ne doit jamais être appelé implicitement"
-                )
+                raise AssertionError("datetime.now() ne doit jamais être appelé implicitement")
 
         monkeypatch.setattr(pp, "datetime", _NoNow)
         result = self._select(engine, ids["ref"])
@@ -406,10 +422,12 @@ class TestRunPredictionPipeline:
 
         with Session(engine) as s:
             assert s.query(Prediction).count() == len(match_ids) * 16
-            dupes = s.execute(text(
-                "SELECT match_id, market, selection, COUNT(*) FROM predictions "
-                "GROUP BY match_id, market, selection HAVING COUNT(*) > 1"
-            )).fetchall()
+            dupes = s.execute(
+                text(
+                    "SELECT match_id, market, selection, COUNT(*) FROM predictions "
+                    "GROUP BY match_id, market, selection HAVING COUNT(*) > 1"
+                )
+            ).fetchall()
             assert dupes == []
 
     def test_pipeline_partial_failure(self, tmp_path):
@@ -434,12 +452,16 @@ class TestRunPredictionPipeline:
         session.add(bad_match)
         session.flush()
         fh = Feature(
-            match_id=bad_match.id, team_id=home.id,
-            goals_for_avg_5=1.0, goals_against_avg_5=1.0,
+            match_id=bad_match.id,
+            team_id=home.id,
+            goals_for_avg_5=1.0,
+            goals_against_avg_5=1.0,
         )
         fa = Feature(
-            match_id=bad_match.id, team_id=away.id,
-            goals_for_avg_5=1.0, goals_against_avg_5=1.0,
+            match_id=bad_match.id,
+            team_id=away.id,
+            goals_for_avg_5=1.0,
+            goals_against_avg_5=1.0,
         )
         session.add_all([fh, fa])
         session.commit()
@@ -481,16 +503,22 @@ class TestRunPredictionPipeline:
         )
         session.add(old)
         session.flush()
-        session.add_all([
-            Feature(
-                match_id=old.id, team_id=home.id,
-                goals_for_avg_5=1.5, goals_against_avg_5=0.8,
-            ),
-            Feature(
-                match_id=old.id, team_id=away.id,
-                goals_for_avg_5=1.0, goals_against_avg_5=1.2,
-            ),
-        ])
+        session.add_all(
+            [
+                Feature(
+                    match_id=old.id,
+                    team_id=home.id,
+                    goals_for_avg_5=1.5,
+                    goals_against_avg_5=0.8,
+                ),
+                Feature(
+                    match_id=old.id,
+                    team_id=away.id,
+                    goals_for_avg_5=1.0,
+                    goals_against_avg_5=1.2,
+                ),
+            ]
+        )
         session.commit()
         old_id = old.id
         session.close()
@@ -540,9 +568,7 @@ class TestRunPredictionPipeline:
         )
 
         with Session(engine) as s:
-            versions = s.execute(text(
-                "SELECT DISTINCT model_version FROM predictions"
-            )).fetchall()
+            versions = s.execute(text("SELECT DISTINCT model_version FROM predictions")).fetchall()
             assert len(versions) == 1
             assert versions[0][0] == "test-v2"
 

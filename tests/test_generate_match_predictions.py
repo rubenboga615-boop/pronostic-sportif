@@ -147,11 +147,7 @@ class TestGenerateMatchPredictions:
         first_probability = first.probability  # copie avant la mise à jour
 
         # Nouvelle donnée : la feature domicile du match cible change.
-        feature = (
-            db.query(Feature)
-            .filter_by(match_id=target_id, team_id=home_id)
-            .first()
-        )
+        feature = db.query(Feature).filter_by(match_id=target_id, team_id=home_id).first()
         feature.goals_for_avg_5 = 3.0
         db.commit()
 
@@ -188,10 +184,7 @@ class TestGenerateMatchPredictions:
         db.commit()
 
         generate_match_predictions(db, target_id)
-        with_bad = {
-            (p.market, p.selection): p.probability
-            for p in db.query(Prediction).all()
-        }
+        with_bad = {(p.market, p.selection): p.probability for p in db.query(Prediction).all()}
 
         # Retirer les matchs parasites (conserver le match cible) et repartir
         # d'une base de prédictions vide.
@@ -202,10 +195,7 @@ class TestGenerateMatchPredictions:
         db.commit()
 
         generate_match_predictions(db, target_id)
-        clean = {
-            (p.market, p.selection): p.probability
-            for p in db.query(Prediction).all()
-        }
+        clean = {(p.market, p.selection): p.probability for p in db.query(Prediction).all()}
 
         assert with_bad == clean
 
@@ -260,8 +250,18 @@ class TestGenerateMatchPredictions:
         db.flush()
         db.add_all(
             [
-                Feature(match_id=target.id, team_id=home.id, goals_for_avg_5=1.5, goals_against_avg_5=0.8),
-                Feature(match_id=target.id, team_id=away.id, goals_for_avg_5=1.0, goals_against_avg_5=1.2),
+                Feature(
+                    match_id=target.id,
+                    team_id=home.id,
+                    goals_for_avg_5=1.5,
+                    goals_against_avg_5=0.8,
+                ),
+                Feature(
+                    match_id=target.id,
+                    team_id=away.id,
+                    goals_for_avg_5=1.0,
+                    goals_against_avg_5=1.2,
+                ),
             ]
         )
         db.commit()
@@ -301,7 +301,7 @@ class TestOriginalDatabaseUntouched:
         mtime_before = os.path.getmtime(ORIG_DB)
 
         # Exécuter sur une base temporaire uniquement.
-        engine = create_engine(f"sqlite:///:memory:")
+        engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(bind=engine)
         session = Session(engine)
         target_id, *_ = _seed_standard(session)

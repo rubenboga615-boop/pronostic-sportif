@@ -128,7 +128,7 @@ class TestGeneratePredictionsForMatches:
 
     def test_invalid_match_rollback_no_partial_write(self, db):
         """Un match invalide ne laisse aucune ligne partielle."""
-        match_ids = _seed_matches(db, n=1)
+        _seed_matches(db, n=1)
         invalid_id = 99999
         generate_predictions_for_matches(db, [invalid_id])
 
@@ -179,7 +179,7 @@ class TestOriginalDatabaseUntouched:
         mtime_before = os.path.getmtime(ORIG_DB)
 
         # Exécuter sur une DB temporaire (tmp_path via fixture ci-dessus)
-        engine = create_engine(f"sqlite:///:memory:")
+        engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(bind=engine)
         session = Session(engine)
         _seed_matches(session, n=1)

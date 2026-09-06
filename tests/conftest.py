@@ -30,16 +30,18 @@ TEST_DB_PATH = _TEST_TMP_DIR / "test.db"
 # pour garantir qu'aucun test ne puisse pointer vers la production.
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 
-import pytest
-from sqlalchemy import text
+# Imports volontairement placés ici : `app.config` et `app.database` lisent
+# DATABASE_URL au moment de leur import, qui doit donc être déjà basculée.
+import pytest  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
-from app.config import settings
-from app.database import Base, engine
-
+from app.config import settings  # noqa: E402
+from app.database import Base, engine  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────
 # 2) Garde-fou anti-production
 # ─────────────────────────────────────────────────────────────
+
 
 def _sqlite_path(url: str) -> Path:
     """Extraire le chemin de fichier depuis une URL SQLite.
@@ -73,6 +75,7 @@ def guard_against_production_database():
 # 3) Nettoyage de la base de test entre chaque test
 # ─────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def clean_database():
     """Créer les tables puis vider la base DE TEST après chaque test."""
@@ -88,6 +91,7 @@ def clean_database():
 # ─────────────────────────────────────────────────────────────
 # 4) Isolation des chemins de données
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def isolated_data_dirs(tmp_path, monkeypatch):

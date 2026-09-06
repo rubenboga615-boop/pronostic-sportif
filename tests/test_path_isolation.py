@@ -9,7 +9,6 @@ from pathlib import Path
 
 from app.config import settings
 
-
 PRODUCTION_RAW = Path("data/raw").resolve()
 PRODUCTION_CLEANED = Path("data/cleaned").resolve()
 
@@ -34,10 +33,7 @@ def test_import_does_not_touch_production_cleaned():
     raw_league_dir = settings.raw_dir / "football_data" / "E0"
     raw_league_dir.mkdir(parents=True, exist_ok=True)
     csv_file = raw_league_dir / "E0_24_iso.csv"
-    csv_file.write_text(
-        "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
-        "01/01/2024,Wolves,Tottenham,3,0,H\n"
-    )
+    csv_file.write_text("Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n01/01/2024,Wolves,Tottenham,3,0,H\n")
 
     run_historical_import(league_codes=["E0"], seasons=["24"], skip_download=True)
 

@@ -13,7 +13,7 @@ def chronological_split(
     test_end: str = "2024-06-30",
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Découpage chronologique des données.
-    
+
     Returns:
         (train, validation, test, test_recent)
     """
@@ -21,9 +21,7 @@ def chronological_split(
     validation = matches_df[
         (matches_df["match_date"] > train_end) & (matches_df["match_date"] <= val_end)
     ]
-    test = matches_df[
-        (matches_df["match_date"] > val_end) & (matches_df["match_date"] <= test_end)
-    ]
+    test = matches_df[(matches_df["match_date"] > val_end) & (matches_df["match_date"] <= test_end)]
     test_recent = matches_df[matches_df["match_date"] > test_end]
 
     logger.info(

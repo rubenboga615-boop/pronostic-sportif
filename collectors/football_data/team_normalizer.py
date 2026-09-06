@@ -6,7 +6,6 @@ Ce module mappe toutes les variantes vers un nom canonique unique par ligue.
 
 from loguru import logger
 
-
 # Dictionnaire de normalisation par ligue
 # Clé = variante dans le CSV, Valeur = nom canonique
 TEAM_ALIASES: dict[str, dict[str, str]] = {
@@ -145,7 +144,6 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Parma": "Parma",
         "Verona": "Verona",
         "Hellas Verona": "Verona",
-        "Verona": "Verona",
         "Chievo": "Chievo Verona",
         "Chievo Verona": "Chievo Verona",
         "SPAL": "SPAL",
@@ -159,7 +157,6 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Venezia": "Venezia",
         "Salernitana": "Salernitana",
         "Monza": "Monza",
-        "Lazio": "Lazio",
     },
     "D1": {
         "Bayern Munich": "Bayern Munich",
@@ -232,11 +229,9 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Nantes": "Nantes",
         "FC Nantes": "Nantes",
         "Saint-Etienne": "Saint-Etienne",
-        "Saint-Etienne": "Saint-Etienne",
         "AS Saint-Etienne": "Saint-Etienne",
         "Strasbourg": "Strasbourg",
         "RC Strasbourg": "Strasbourg",
-        "Nice": "Nice",
         "Lens": "Lens",
         "RC Lens": "Lens",
         "Brest": "Brest",
@@ -262,7 +257,6 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Clermont Foot": "Clermont",
         "Ajaccio": "Ajaccio",
         "AC Ajaccio": "Ajaccio",
-        "Lyon": "Lyon",
     },
 }
 
@@ -288,9 +282,7 @@ def normalize_team_name(name: str, league: str) -> str:
         return aliases[name_stripped]
 
     # Pas de correspondance : retourner le nom tel quel
-    logger.warning(
-        f"Nom d'équipe non reconnu : '{name_stripped}' dans la ligue {league}"
-    )
+    logger.warning(f"Nom d'équipe non reconnu : '{name_stripped}' dans la ligue {league}")
     return name_stripped
 
 

@@ -5,25 +5,36 @@ Vérifie qu'aucune donnée future n'est utilisée dans les features.
 
 import pandas as pd
 import pytest
+
+from features.elo import calculate_elo_ratings
 from features.form import calculate_form_features
 from features.rest_days import calculate_rest_days
-from features.elo import calculate_elo_ratings
 
 
 @pytest.fixture
 def sample_matches():
     """Données de test avec des matchs sur plusieurs dates."""
-    return pd.DataFrame({
-        "id": [1, 2, 3, 4, 5, 6, 7, 8],
-        "home_team_id": [1, 2, 1, 3, 1, 2, 1, 3],
-        "away_team_id": [2, 1, 3, 1, 2, 3, 1, 2],
-        "home_goals": [2, 1, 0, 3, 1, 2, 0, 1],
-        "away_goals": [1, 1, 0, 1, 0, 1, 0, 0],
-        "match_date": pd.to_datetime([
-            "2024-01-01", "2024-01-08", "2024-01-15", "2024-01-22",
-            "2024-01-29", "2024-02-05", "2024-02-12", "2024-02-19",
-        ]),
-    })
+    return pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6, 7, 8],
+            "home_team_id": [1, 2, 1, 3, 1, 2, 1, 3],
+            "away_team_id": [2, 1, 3, 1, 2, 3, 1, 2],
+            "home_goals": [2, 1, 0, 3, 1, 2, 0, 1],
+            "away_goals": [1, 1, 0, 1, 0, 1, 0, 0],
+            "match_date": pd.to_datetime(
+                [
+                    "2024-01-01",
+                    "2024-01-08",
+                    "2024-01-15",
+                    "2024-01-22",
+                    "2024-01-29",
+                    "2024-02-05",
+                    "2024-02-12",
+                    "2024-02-19",
+                ]
+            ),
+        }
+    )
 
 
 class TestDataLeakage:

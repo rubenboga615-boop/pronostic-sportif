@@ -1,21 +1,20 @@
 """Tests du pipeline d'import historique."""
 
-import pytest
-import pandas as pd
 from datetime import datetime
+
+import pandas as pd
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Match
+from collectors.football_data.team_normalizer import normalize_team_name
 from pipelines.historical_import import (
     _make_provider_match_id,
     _process_match_row,
-    _validate_goals,
     _validate_date,
+    _validate_goals,
     run_historical_import,
 )
-from collectors.football_data.parser import parse_csv
-from collectors.football_data.team_normalizer import normalize_team_name
 
 
 class TestValidateGoals:
@@ -225,7 +224,9 @@ class TestProviderMatchId:
         """Des matchs différents (date ou équipe) produisent des identifiants différents."""
         base = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Chelsea")
         diff_date = _make_provider_match_id("E0", "24", datetime(2024, 1, 2), "Arsenal", "Chelsea")
-        diff_team = _make_provider_match_id("E0", "24", datetime(2024, 1, 1), "Arsenal", "Tottenham")
+        diff_team = _make_provider_match_id(
+            "E0", "24", datetime(2024, 1, 1), "Arsenal", "Tottenham"
+        )
         assert base != diff_date
         assert base != diff_team
 

@@ -9,11 +9,11 @@ def calibrate_probabilities(
     method: str = "platt",
 ) -> np.ndarray:
     """Calibrer les probabilités du modèle.
-    
+
     Args:
         raw_probabilities : probabilités brutes du modèle
         method : méthode de calibration ('platt' ou 'isotonic')
-    
+
     Returns:
         Probabilités calibrées
     """

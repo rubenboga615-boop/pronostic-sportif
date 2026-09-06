@@ -1,7 +1,6 @@
 """Calcul des features xG (Expected Goals)."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_xg_features(
@@ -11,16 +10,17 @@ def calculate_xg_features(
     window: int = 5,
 ) -> dict:
     """Calculer les features xG pour une équipe.
-    
+
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
     if xg_data.empty:
         return {}
 
-    team_xg = xg_data[
-        (xg_data["team_id"] == team_id)
-        & (xg_data["retrieved_at"] < match_date)
-    ].sort_values("retrieved_at").tail(window)
+    team_xg = (
+        xg_data[(xg_data["team_id"] == team_id) & (xg_data["retrieved_at"] < match_date)]
+        .sort_values("retrieved_at")
+        .tail(window)
+    )
 
     if team_xg.empty or len(team_xg) < 2:
         return {

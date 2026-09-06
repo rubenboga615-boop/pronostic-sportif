@@ -1,12 +1,11 @@
 """Calcul des variables de forme (5 et 10 derniers matchs)."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_form_points(results: pd.Series, window: int = 5) -> pd.Series:
     """Calculer les points de forme sur une fenêtre donnée.
-    
+
     Résultat : W=3, D=1, L=0
     """
     points_map = {"W": 3, "D": 1, "L": 0}
@@ -21,7 +20,7 @@ def calculate_form_features(
     windows: list[int] = [5, 10],
 ) -> dict:
     """Calculer les features de forme pour une équipe avant un match donné.
-    
+
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
     team_matches = matches_df[

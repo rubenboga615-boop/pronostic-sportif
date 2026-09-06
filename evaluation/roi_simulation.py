@@ -1,9 +1,5 @@
 """Simulation de ROI (Return on Investment)."""
 
-from loguru import logger
-
-from evaluation.metrics import roi_simulation
-
 
 def simulate_roi_by_strategy(
     predictions: list[dict],

@@ -51,9 +51,7 @@ class TestBuildMatchMarkets:
         assert s == pytest.approx(1.0, abs=1e-3)
 
     def test_fallback_null_features(self):
-        result = build_match_markets(
-            {"goals_for_avg_5": None}, {"goals_against_avg_5": None}, AVG
-        )
+        result = build_match_markets({"goals_for_avg_5": None}, {"goals_against_avg_5": None}, AVG)
         assert len(result) == 16
         lh, la = estimate_match_lambdas(
             {"goals_for_avg_5": None}, {"goals_against_avg_5": None}, AVG
@@ -102,8 +100,8 @@ class TestBuildMatchMarkets:
         }
         assert {p["selection"] for p in markets if p["market"] == "BTTS"} == {"yes", "no"}
         ou = {p["selection"] for p in markets if p["market"] == "over_under"}
-        expected_ou = {f"over_{l}" for l in OVER_UNDER_LINES} | {
-            f"under_{l}" for l in OVER_UNDER_LINES
+        expected_ou = {f"over_{line}" for line in OVER_UNDER_LINES} | {
+            f"under_{line}" for line in OVER_UNDER_LINES
         }
         assert ou == expected_ou
 

@@ -59,9 +59,7 @@ def normalize_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
     """
     return {
         "market": MARKET_TO_PUBLIC.get(prediction["market"], prediction["market"]),
-        "selection": SELECTION_TO_PUBLIC.get(
-            prediction["selection"], prediction["selection"]
-        ),
+        "selection": SELECTION_TO_PUBLIC.get(prediction["selection"], prediction["selection"]),
         "probability": prediction["probability"],
         "fair_odds": prediction["fair_odds"],
     }

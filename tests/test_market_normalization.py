@@ -1,7 +1,5 @@
 """Tests de la normalisation des identifiants de marchés (contrat public)."""
 
-import pytest
-
 from models.market_assembly import (
     MARKET_TO_PUBLIC,
     PUBLIC_MARKETS,
@@ -22,7 +20,12 @@ INTERNAL = [
     {"market": "1n2", "selection": "home_win", "probability": 0.5, "fair_odds": 2.0},
     {"market": "1n2", "selection": "draw", "probability": 0.25, "fair_odds": 4.0},
     {"market": "1n2", "selection": "away_win", "probability": 0.25, "fair_odds": 4.0},
-    {"market": "double_chance", "selection": "home_or_draw", "probability": 0.75, "fair_odds": 1.3333},
+    {
+        "market": "double_chance",
+        "selection": "home_or_draw",
+        "probability": 0.75,
+        "fair_odds": 1.3333,
+    },
     {"market": "over_under", "selection": "over_0.5", "probability": 0.9, "fair_odds": 1.1111},
     {"market": "over_under", "selection": "under_2.5", "probability": 0.6, "fair_odds": 1.6667},
     {"market": "btts", "selection": "yes", "probability": 0.55, "fair_odds": 1.8182},
@@ -74,10 +77,14 @@ class TestNormalizePrediction:
         markets = build_match_markets(HOME, AWAY, AVG)
         ou = {p["selection"] for p in markets if p["market"] == "over_under"}
         assert ou == {
-            "over_0.5", "under_0.5",
-            "over_1.5", "under_1.5",
-            "over_2.5", "under_2.5",
-            "over_3.5", "under_3.5",
+            "over_0.5",
+            "under_0.5",
+            "over_1.5",
+            "under_1.5",
+            "over_2.5",
+            "under_2.5",
+            "over_3.5",
+            "under_3.5",
         }
 
     def test_btts_yes_no(self):

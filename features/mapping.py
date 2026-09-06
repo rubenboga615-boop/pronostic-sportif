@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # Correspondance directe : clé produite par un module -> colonne du modèle.
 DIRECT_MAPPING: dict[str, str] = {
     # form.py
@@ -48,17 +47,29 @@ DIRECT_MAPPING: dict[str, str] = {
 # Sorties produites par les modules mais sans colonne dédiée dans Feature.
 # Elles ne sont pas persistées en l'état (candidats à une évolution du schéma).
 UNMAPPED_KEYS: set[str] = {
-    "form_wins_5", "form_wins_10",
-    "form_draws_5", "form_draws_10",
-    "form_losses_5", "form_losses_10",
-    "clean_sheets_5", "clean_sheets_10",
-    "total_goals_for", "total_goals_against",
-    "max_goals_for", "min_goals_for",
-    "goals_for_avg_10", "goals_against_avg_10",
-    "home_goals_for_avg", "home_goals_against_avg",
-    "away_goals_for_avg", "away_goals_against_avg",
-    "home_elo", "away_elo", "rest_days_difference",
-    "comparable_teams", "opponent_elo_avg_5",
+    "form_wins_5",
+    "form_wins_10",
+    "form_draws_5",
+    "form_draws_10",
+    "form_losses_5",
+    "form_losses_10",
+    "clean_sheets_5",
+    "clean_sheets_10",
+    "total_goals_for",
+    "total_goals_against",
+    "max_goals_for",
+    "min_goals_for",
+    "goals_for_avg_10",
+    "goals_against_avg_10",
+    "home_goals_for_avg",
+    "home_goals_against_avg",
+    "away_goals_for_avg",
+    "away_goals_against_avg",
+    "home_elo",
+    "away_elo",
+    "rest_days_difference",
+    "comparable_teams",
+    "opponent_elo_avg_5",
 }
 
 # NOTE : le modèle Feature ne dispose pas de colonnes de fenêtre 10 pour les

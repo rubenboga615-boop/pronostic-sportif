@@ -1,7 +1,6 @@
 """Calcul du classement Elo pour les équipes de football."""
 
 import pandas as pd
-from loguru import logger
 
 DEFAULT_ELO = 1500
 K_FACTOR = 32
@@ -35,7 +34,7 @@ def calculate_elo_ratings(
     team_ids: dict[str, int],
 ) -> pd.DataFrame:
     """Calculer les ratings Elo pour tous les matchs.
-    
+
     Retourne un DataFrame avec les ratings Elo de chaque équipe
     avant chaque match (anti-fuite : le rating est calculé AVANT le résultat).
     """
@@ -54,14 +53,16 @@ def calculate_elo_ratings(
         home_elo_before = elo_ratings.get(home_id, DEFAULT_ELO)
         away_elo_before = elo_ratings.get(away_id, DEFAULT_ELO)
 
-        elo_history.append({
-            "match_id": match.get("id"),
-            "match_date": match["match_date"],
-            "home_team_id": home_id,
-            "away_team_id": away_id,
-            "home_elo": home_elo_before,
-            "away_elo": away_elo_before,
-        })
+        elo_history.append(
+            {
+                "match_id": match.get("id"),
+                "match_date": match["match_date"],
+                "home_team_id": home_id,
+                "away_team_id": away_id,
+                "home_elo": home_elo_before,
+                "away_elo": away_elo_before,
+            }
+        )
 
         # Mettre à jour après le match
         home_goals = int(match["home_goals"])

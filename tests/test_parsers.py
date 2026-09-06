@@ -1,8 +1,7 @@
 """Tests des parseurs de données."""
 
 import pandas as pd
-import pytest
-from pathlib import Path
+
 from collectors.football_data.parser import parse_csv
 
 
@@ -96,7 +95,10 @@ class TestParser:
 
     def test_parse_csv_encoding_latin1(self, tmp_path):
         """Vérifier que les fichiers latin-1 sont parsés."""
-        csv_content = "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n01/01/2024,Mallorca,Atl\\u00e9tico Madrid,1,0,H\n"
+        csv_content = (
+            "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+            "01/01/2024,Mallorca,Atl\\u00e9tico Madrid,1,0,H\n"
+        )
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(csv_content, encoding="latin-1")
 

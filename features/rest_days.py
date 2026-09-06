@@ -1,7 +1,6 @@
 """Calcul des jours de repos entre les matchs."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_rest_days(
@@ -10,7 +9,7 @@ def calculate_rest_days(
     match_date: pd.Timestamp,
 ) -> int | None:
     """Calculer les jours de repos d'une équipe avant un match.
-    
+
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
     team_matches = matches_df[

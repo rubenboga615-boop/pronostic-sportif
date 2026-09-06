@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 from loguru import logger
-from sqlalchemy import text
 
 from app.config import settings
 from app.database import SessionLocal, engine
@@ -36,7 +35,6 @@ from app.models import (
 from collectors.football_data.league_config import LEAGUE_CONFIG
 from collectors.football_data.parser import parse_csv
 from collectors.football_data.team_normalizer import normalize_team_name
-
 
 # ──────────────────────────────────────────────
 # Bookmaker odds columns mapping
@@ -97,6 +95,7 @@ STATS_COLUMNS_AWAY = {
 # Validation
 # ──────────────────────────────────────────────
 
+
 def _validate_goals(row: pd.Series) -> list[str]:
     """Valider la cohérence des buts, retourner les warnings."""
     warnings: list[str] = []
@@ -136,6 +135,7 @@ def _validate_date(row: pd.Series) -> list[str]:
 # Database helpers
 # ──────────────────────────────────────────────
 
+
 def _upsert_competition(session, code: str, config: dict) -> Competition:
     """Upsert une compétition."""
     existing = session.query(Competition).filter_by(provider_code=code).first()
@@ -168,8 +168,8 @@ def _upsert_season(session, competition_id: int, season_code: str) -> Season:
     season = Season(
         competition_id=competition_id,
         season_name=season_code,
-        start_date=datetime(season_start, 8, 1, tzinfo=timezone.utc),
-        end_date=datetime(season_start + 1, 5, 31, tzinfo=timezone.utc),
+        start_date=datetime(season_start, 8, 1, tzinfo=UTC),
+        end_date=datetime(season_start + 1, 5, 31, tzinfo=UTC),
         status=status,
     )
     session.add(season)
@@ -268,7 +268,7 @@ def _insert_odds(
                 all_present = False
         if not all_present:
             continue
-        captured_at = match_date if pd.notna(match_date) else datetime.now(timezone.utc)
+        captured_at = match_date if pd.notna(match_date) else datetime.now(UTC)
         for selection, odds_val in odds_values.items():
             snap = OddsSnapshot(
                 match_id=match_id,
@@ -289,6 +289,7 @@ def _insert_odds(
 # Quality report
 # ──────────────────────────────────────────────
 
+
 def _write_quality_report(report: dict, output_dir: Path) -> Path:
     """Écrire le rapport de qualité en JSON."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -302,6 +303,7 @@ def _write_quality_report(report: dict, output_dir: Path) -> Path:
 # ──────────────────────────────────────────────
 # Main pipeline
 # ──────────────────────────────────────────────
+
 
 def run_historical_import(
     league_codes: list[str] | None = None,
@@ -331,7 +333,7 @@ def run_historical_import(
 
     # Rapport
     report: dict = {
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         # Fichiers
         "files_processed": 0,
         "files_skipped": 0,
@@ -357,6 +359,7 @@ def run_historical_import(
     if not skip_download:
         logger.info("Étape 1 : Téléchargement des CSV...")
         import asyncio
+
         try:
             downloaded_files = asyncio.get_event_loop().run_until_complete(
                 download_all(league_codes, seasons, force=force_download)
@@ -407,7 +410,7 @@ def run_historical_import(
         session.close()
 
     # Étape 7 : Rapport de qualité
-    report["finished_at"] = datetime.now(timezone.utc).isoformat()
+    report["finished_at"] = datetime.now(UTC).isoformat()
     _write_quality_report(report, settings.cleaned_dir)
 
     # Source health
@@ -453,7 +456,9 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
     season_code = parts[1]
 
     if league_code not in LEAGUE_CONFIG:
-        report["warnings"].append(f"Ligue inconnue dans le fichier: {league_code} ({csv_file.name})")
+        report["warnings"].append(
+            f"Ligue inconnue dans le fichier: {league_code} ({csv_file.name})"
+        )
         file_report["skipped"] = 1
         return file_report
 
@@ -484,9 +489,7 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
     # Traiter chaque ligne
     for idx, row in df.iterrows():
         try:
-            result = _process_match_row(
-                session, row, competition, season, league_code, country
-            )
+            result = _process_match_row(session, row, competition, season, league_code, country)
             disposition = result["disposition"]
             if disposition == "inserted":
                 file_report["inserted"] += 1
@@ -614,8 +617,12 @@ def _process_match_row(
         away_ht_goals=int(row["away_ht_goals"]) if pd.notna(row.get("away_ht_goals")) else None,
         home_shots=int(row["home_shots"]) if pd.notna(row.get("home_shots")) else None,
         away_shots=int(row["away_shots"]) if pd.notna(row.get("away_shots")) else None,
-        home_shots_on_target=int(row["home_shots_on_target"]) if pd.notna(row.get("home_shots_on_target")) else None,
-        away_shots_on_target=int(row["away_shots_on_target"]) if pd.notna(row.get("away_shots_on_target")) else None,
+        home_shots_on_target=int(row["home_shots_on_target"])
+        if pd.notna(row.get("home_shots_on_target"))
+        else None,
+        away_shots_on_target=int(row["away_shots_on_target"])
+        if pd.notna(row.get("away_shots_on_target"))
+        else None,
     )
     session.add(match)
     session.flush()
@@ -646,13 +653,13 @@ def _update_source_health(report: dict) -> None:
     try:
         existing = session.query(SourceHealth).filter_by(source="football_data").first()
         if existing:
-            existing.last_success_at = datetime.now(timezone.utc)
+            existing.last_success_at = datetime.now(UTC)
             existing.records_last_run = report["matches_inserted"]
             existing.status = "healthy" if not report["errors"] else "degraded"
         else:
             sh = SourceHealth(
                 source="football_data",
-                last_success_at=datetime.now(timezone.utc),
+                last_success_at=datetime.now(UTC),
                 records_last_run=report["matches_inserted"],
                 status="healthy" if not report["errors"] else "degraded",
             )

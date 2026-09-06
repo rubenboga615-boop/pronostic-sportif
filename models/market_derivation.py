@@ -8,7 +8,6 @@ Chaque fonction retourne une liste de dictionnaires avec :
 """
 
 import numpy as np
-from loguru import logger
 
 
 def fair_odds(probability: float) -> float:
@@ -25,9 +24,19 @@ def derive_1n2(score_matrix: np.ndarray) -> list[dict]:
     away_win = float(np.sum(np.triu(score_matrix, k=1)))
 
     return [
-        {"market": "1n2", "selection": "home_win", "probability": home_win, "fair_odds": fair_odds(home_win)},
+        {
+            "market": "1n2",
+            "selection": "home_win",
+            "probability": home_win,
+            "fair_odds": fair_odds(home_win),
+        },
         {"market": "1n2", "selection": "draw", "probability": draw, "fair_odds": fair_odds(draw)},
-        {"market": "1n2", "selection": "away_win", "probability": away_win, "fair_odds": fair_odds(away_win)},
+        {
+            "market": "1n2",
+            "selection": "away_win",
+            "probability": away_win,
+            "fair_odds": fair_odds(away_win),
+        },
     ]
 
 
@@ -35,9 +44,24 @@ def derive_double_chance(probabilities_1n2: list[dict]) -> list[dict]:
     """Dériver les probabilités Double Chance depuis 1N2."""
     probs = {p["selection"]: p["probability"] for p in probabilities_1n2}
     return [
-        {"market": "double_chance", "selection": "home_or_draw", "probability": probs["home_win"] + probs["draw"], "fair_odds": fair_odds(probs["home_win"] + probs["draw"])},
-        {"market": "double_chance", "selection": "home_or_away", "probability": probs["home_win"] + probs["away_win"], "fair_odds": fair_odds(probs["home_win"] + probs["away_win"])},
-        {"market": "double_chance", "selection": "draw_or_away", "probability": probs["draw"] + probs["away_win"], "fair_odds": fair_odds(probs["draw"] + probs["away_win"])},
+        {
+            "market": "double_chance",
+            "selection": "home_or_draw",
+            "probability": probs["home_win"] + probs["draw"],
+            "fair_odds": fair_odds(probs["home_win"] + probs["draw"]),
+        },
+        {
+            "market": "double_chance",
+            "selection": "home_or_away",
+            "probability": probs["home_win"] + probs["away_win"],
+            "fair_odds": fair_odds(probs["home_win"] + probs["away_win"]),
+        },
+        {
+            "market": "double_chance",
+            "selection": "draw_or_away",
+            "probability": probs["draw"] + probs["away_win"],
+            "fair_odds": fair_odds(probs["draw"] + probs["away_win"]),
+        },
     ]
 
 
@@ -51,8 +75,18 @@ def derive_over_under(score_matrix: np.ndarray, line: float) -> list[dict]:
                 over += score_matrix[i][j]
     under = 1.0 - over
     return [
-        {"market": "over_under", "selection": f"over_{line}", "probability": over, "fair_odds": fair_odds(over)},
-        {"market": "over_under", "selection": f"under_{line}", "probability": under, "fair_odds": fair_odds(under)},
+        {
+            "market": "over_under",
+            "selection": f"over_{line}",
+            "probability": over,
+            "fair_odds": fair_odds(over),
+        },
+        {
+            "market": "over_under",
+            "selection": f"under_{line}",
+            "probability": under,
+            "fair_odds": fair_odds(under),
+        },
     ]
 
 
@@ -65,8 +99,18 @@ def derive_btts(score_matrix: np.ndarray) -> list[dict]:
             btts_yes += score_matrix[i][j]
     btts_no = 1.0 - btts_yes
     return [
-        {"market": "btts", "selection": "yes", "probability": btts_yes, "fair_odds": fair_odds(btts_yes)},
-        {"market": "btts", "selection": "no", "probability": btts_no, "fair_odds": fair_odds(btts_no)},
+        {
+            "market": "btts",
+            "selection": "yes",
+            "probability": btts_yes,
+            "fair_odds": fair_odds(btts_yes),
+        },
+        {
+            "market": "btts",
+            "selection": "no",
+            "probability": btts_no,
+            "fair_odds": fair_odds(btts_no),
+        },
     ]
 
 
@@ -92,10 +136,10 @@ def derive_most_productive_half(
     for i in range(first_half_matrix.shape[0]):
         for j in range(first_half_matrix.shape[1]):
             for k in range(second_half_matrix.shape[0]):
-                for l in range(second_half_matrix.shape[1]):
+                for m in range(second_half_matrix.shape[1]):
                     total_1h = i + j
-                    total_2h = k + l
-                    joint = first_half_matrix[i][j] * second_half_matrix[k][l]
+                    total_2h = k + m
+                    joint = first_half_matrix[i][j] * second_half_matrix[k][m]
                     if total_1h > total_2h:
                         prob_first += joint
                     elif total_1h < total_2h:
@@ -104,9 +148,24 @@ def derive_most_productive_half(
                         prob_equal += joint
 
     return [
-        {"market": "most_productive_half", "selection": "first_half", "probability": prob_first, "fair_odds": fair_odds(prob_first)},
-        {"market": "most_productive_half", "selection": "second_half", "probability": prob_second, "fair_odds": fair_odds(prob_second)},
-        {"market": "most_productive_half", "selection": "equal", "probability": prob_equal, "fair_odds": fair_odds(prob_equal)},
+        {
+            "market": "most_productive_half",
+            "selection": "first_half",
+            "probability": prob_first,
+            "fair_odds": fair_odds(prob_first),
+        },
+        {
+            "market": "most_productive_half",
+            "selection": "second_half",
+            "probability": prob_second,
+            "fair_odds": fair_odds(prob_second),
+        },
+        {
+            "market": "most_productive_half",
+            "selection": "equal",
+            "probability": prob_equal,
+            "fair_odds": fair_odds(prob_equal),
+        },
     ]
 
 
@@ -128,6 +187,16 @@ def derive_asian_handicap(score_matrix: np.ndarray, handicap: float) -> list[dic
                 handicap_push += score_matrix[i][j]
 
     return [
-        {"market": "asian_handicap", "selection": f"home_{handicap}", "probability": handicap_home, "fair_odds": fair_odds(handicap_home)},
-        {"market": "asian_handicap", "selection": f"away_{-handicap}", "probability": handicap_away, "fair_odds": fair_odds(handicap_away)},
+        {
+            "market": "asian_handicap",
+            "selection": f"home_{handicap}",
+            "probability": handicap_home,
+            "fair_odds": fair_odds(handicap_home),
+        },
+        {
+            "market": "asian_handicap",
+            "selection": f"away_{-handicap}",
+            "probability": handicap_away,
+            "fair_odds": fair_odds(handicap_away),
+        },
     ]

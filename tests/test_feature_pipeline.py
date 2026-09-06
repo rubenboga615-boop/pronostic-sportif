@@ -8,48 +8,60 @@ from pipelines.feature_pipeline import compute_match_features
 
 def _prior_df() -> pd.DataFrame:
     """Cinq matchs antérieurs (avant 2024-03-01), trois équipes."""
-    return pd.DataFrame({
-        "id": [1, 2, 3, 4, 5],
-        "competition_id": [1, 1, 1, 1, 1],
-        "match_date": pd.to_datetime([
-            "2024-01-10", "2024-01-12", "2024-02-10", "2024-02-15", "2024-02-20",
-        ]),
-        "home_team_id": [1, 2, 3, 2, 3],
-        "away_team_id": [3, 3, 1, 1, 2],
-        "home_goals": [2, 1, 0, 1, 0],
-        "away_goals": [0, 1, 3, 2, 1],
-        "home_shots": [15, 10, 8, 9, 7],
-        "away_shots": [5, 10, 14, 12, 11],
-        "home_shots_on_target": [6, 4, 3, 4, 2],
-        "away_shots_on_target": [2, 4, 7, 6, 5],
-    })
+    return pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "competition_id": [1, 1, 1, 1, 1],
+            "match_date": pd.to_datetime(
+                [
+                    "2024-01-10",
+                    "2024-01-12",
+                    "2024-02-10",
+                    "2024-02-15",
+                    "2024-02-20",
+                ]
+            ),
+            "home_team_id": [1, 2, 3, 2, 3],
+            "away_team_id": [3, 3, 1, 1, 2],
+            "home_goals": [2, 1, 0, 1, 0],
+            "away_goals": [0, 1, 3, 2, 1],
+            "home_shots": [15, 10, 8, 9, 7],
+            "away_shots": [5, 10, 14, 12, 11],
+            "home_shots_on_target": [6, 4, 3, 4, 2],
+            "away_shots_on_target": [2, 4, 7, 6, 5],
+        }
+    )
 
 
 def _target_match() -> pd.Series:
     """Match cible : équipe 1 (domicile) vs équipe 2 (extérieur)."""
-    return pd.Series({
-        "id": 100,
-        "competition_id": 1,
-        "season_id": 1,
-        "match_date": pd.Timestamp("2024-03-01"),
-        "home_team_id": 1,
-        "away_team_id": 2,
-        "home_goals": None,
-        "away_goals": None,
-    })
+    return pd.Series(
+        {
+            "id": 100,
+            "competition_id": 1,
+            "season_id": 1,
+            "match_date": pd.Timestamp("2024-03-01"),
+            "home_team_id": 1,
+            "away_team_id": 2,
+            "home_goals": None,
+            "away_goals": None,
+        }
+    )
 
 
 def _odds_df() -> pd.DataFrame:
     """Paires ouverture/clôture (B365 -> B365_close) pour home (2.0->1.8) et away (5.0->4.0)."""
-    return pd.DataFrame({
-        "match_id": [100, 100, 100, 100],
-        "market": ["1N2", "1N2", "1N2", "1N2"],
-        "selection": ["home", "home", "away", "away"],
-        "bookmaker": ["B365", "B365_close", "B365", "B365_close"],
-        "is_closing": [0, 1, 0, 1],
-        "odds": [2.0, 1.8, 5.0, 4.0],
-        "captured_at": pd.to_datetime(["2024-02-01", "2024-02-28", "2024-02-01", "2024-02-28"]),
-    })
+    return pd.DataFrame(
+        {
+            "match_id": [100, 100, 100, 100],
+            "market": ["1N2", "1N2", "1N2", "1N2"],
+            "selection": ["home", "home", "away", "away"],
+            "bookmaker": ["B365", "B365_close", "B365", "B365_close"],
+            "is_closing": [0, 1, 0, 1],
+            "odds": [2.0, 1.8, 5.0, 4.0],
+            "captured_at": pd.to_datetime(["2024-02-01", "2024-02-28", "2024-02-01", "2024-02-28"]),
+        }
+    )
 
 
 class TestComputeMatchFeatures:
@@ -62,19 +74,21 @@ class TestComputeMatchFeatures:
         # Match daté à la date cible (2024-03-01) avec des valeurs très différentes
         # (victoire 9-0 de l'équipe 1) : toute fuite modifierait visiblement
         # rest_days, elo_rating et goal_difference.
-        future = pd.DataFrame({
-            "id": [999],
-            "competition_id": [1],
-            "match_date": pd.to_datetime(["2024-03-01"]),
-            "home_team_id": [1],
-            "away_team_id": [2],
-            "home_goals": [9],
-            "away_goals": [0],
-            "home_shots": [20],
-            "away_shots": [0],
-            "home_shots_on_target": [10],
-            "away_shots_on_target": [0],
-        })
+        future = pd.DataFrame(
+            {
+                "id": [999],
+                "competition_id": [1],
+                "match_date": pd.to_datetime(["2024-03-01"]),
+                "home_team_id": [1],
+                "away_team_id": [2],
+                "home_goals": [9],
+                "away_goals": [0],
+                "home_shots": [20],
+                "away_shots": [0],
+                "home_shots_on_target": [10],
+                "away_shots_on_target": [0],
+            }
+        )
         with_future = pd.concat([prior, future], ignore_index=True)
 
         baseline = compute_match_features(_target_match(), prior, _odds_df())
@@ -115,19 +129,21 @@ class TestComputeMatchFeatures:
 
     def test_elo_rating_side_selection(self):
         # Un seul match antérieur : équipe 1 bat équipe 2 (2-0).
-        prior = pd.DataFrame({
-            "id": [1],
-            "competition_id": [1],
-            "match_date": pd.to_datetime(["2024-02-15"]),
-            "home_team_id": [1],
-            "away_team_id": [2],
-            "home_goals": [2],
-            "away_goals": [0],
-            "home_shots": [10],
-            "away_shots": [5],
-            "home_shots_on_target": [5],
-            "away_shots_on_target": [2],
-        })
+        prior = pd.DataFrame(
+            {
+                "id": [1],
+                "competition_id": [1],
+                "match_date": pd.to_datetime(["2024-02-15"]),
+                "home_team_id": [1],
+                "away_team_id": [2],
+                "home_goals": [2],
+                "away_goals": [0],
+                "home_shots": [10],
+                "away_shots": [5],
+                "home_shots_on_target": [5],
+                "away_shots_on_target": [2],
+            }
+        )
         result = compute_match_features(_target_match(), prior, _odds_df())
         # Vainqueur : 1500 + 32*(1 - 0.5) = 1516 ; perdant : 1500 + 32*(0 - 0.5) = 1484.
         assert result["home"]["elo_rating"] == pytest.approx(1516.0)

@@ -2,7 +2,6 @@
 
 import numpy as np
 from scipy.stats import poisson
-from loguru import logger
 
 
 def poisson_pmf(k: int, lam: float) -> float:
@@ -22,7 +21,7 @@ def estimate_lambda(
     defense = team_goals_conceded / league_avg_goals
     lam = attack * defense * league_avg_goals
     if is_home:
-        lam *= (1 + home_advantage)
+        lam *= 1 + home_advantage
     return max(lam, 0.1)
 
 

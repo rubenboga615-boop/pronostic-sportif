@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-
 # Colonnes attendues (peuvent varier selon les saisons)
 RESULT_COLUMNS = {
     # Identité
@@ -62,32 +61,60 @@ RESULT_COLUMNS = {
 
 # Colonnes numériques à convertir
 NUMERIC_COLUMNS = [
-    "home_goals", "away_goals",
-    "home_ht_goals", "away_ht_goals",
-    "home_shots", "away_shots",
-    "home_shots_on_target", "away_shots_on_target",
-    "home_corners", "away_corners",
-    "home_fouls", "away_fouls",
-    "home_yellow", "away_yellow",
-    "home_red", "away_red",
-    "odds_b365_home", "odds_b365_draw", "odds_b365_away",
-    "odds_b365_close_home", "odds_b365_close_draw", "odds_b365_close_away",
-    "odds_bw_home", "odds_bw_draw", "odds_bw_away",
-    "odds_iw_home", "odds_iw_draw", "odds_iw_away",
-    "odds_pinnacle_home", "odds_pinnacle_draw", "odds_pinnacle_away",
-    "max_odds_home", "max_odds_draw", "max_odds_away",
+    "home_goals",
+    "away_goals",
+    "home_ht_goals",
+    "away_ht_goals",
+    "home_shots",
+    "away_shots",
+    "home_shots_on_target",
+    "away_shots_on_target",
+    "home_corners",
+    "away_corners",
+    "home_fouls",
+    "away_fouls",
+    "home_yellow",
+    "away_yellow",
+    "home_red",
+    "away_red",
+    "odds_b365_home",
+    "odds_b365_draw",
+    "odds_b365_away",
+    "odds_b365_close_home",
+    "odds_b365_close_draw",
+    "odds_b365_close_away",
+    "odds_bw_home",
+    "odds_bw_draw",
+    "odds_bw_away",
+    "odds_iw_home",
+    "odds_iw_draw",
+    "odds_iw_away",
+    "odds_pinnacle_home",
+    "odds_pinnacle_draw",
+    "odds_pinnacle_away",
+    "max_odds_home",
+    "max_odds_draw",
+    "max_odds_away",
 ]
 
 # Colonnes entières (buts, cartons, etc.)
 INTEGER_COLUMNS = [
-    "home_goals", "away_goals",
-    "home_ht_goals", "away_ht_goals",
-    "home_shots", "away_shots",
-    "home_shots_on_target", "away_shots_on_target",
-    "home_corners", "away_corners",
-    "home_fouls", "away_fouls",
-    "home_yellow", "away_yellow",
-    "home_red", "away_red",
+    "home_goals",
+    "away_goals",
+    "home_ht_goals",
+    "away_ht_goals",
+    "home_shots",
+    "away_shots",
+    "home_shots_on_target",
+    "away_shots_on_target",
+    "home_corners",
+    "away_corners",
+    "home_fouls",
+    "away_fouls",
+    "home_yellow",
+    "away_yellow",
+    "home_red",
+    "away_red",
 ]
 
 

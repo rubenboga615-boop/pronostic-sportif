@@ -1,7 +1,6 @@
 """Calcul des statistiques domicile/extérieur."""
 
 import pandas as pd
-from loguru import logger
 
 
 def calculate_home_away_features(
@@ -11,20 +10,26 @@ def calculate_home_away_features(
     window: int = 10,
 ) -> dict:
     """Calculer les statistiques domicile/extérieur d'une équipe.
-    
+
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
     # Matchs à domicile
-    home_matches = matches_df[
-        (matches_df["home_team_id"] == team_id)
-        & (matches_df["match_date"] < match_date)
-    ].sort_values("match_date").tail(window)
+    home_matches = (
+        matches_df[
+            (matches_df["home_team_id"] == team_id) & (matches_df["match_date"] < match_date)
+        ]
+        .sort_values("match_date")
+        .tail(window)
+    )
 
     # Matchs à l'extérieur
-    away_matches = matches_df[
-        (matches_df["away_team_id"] == team_id)
-        & (matches_df["match_date"] < match_date)
-    ].sort_values("match_date").tail(window)
+    away_matches = (
+        matches_df[
+            (matches_df["away_team_id"] == team_id) & (matches_df["match_date"] < match_date)
+        ]
+        .sort_values("match_date")
+        .tail(window)
+    )
 
     features = {}
 

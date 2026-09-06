@@ -8,14 +8,16 @@ from features.odds_movement import calculate_odds_movement
 
 def _pair(match_id=1, market="1N2", selection="home", opening=2.0, closing=1.8):
     """Paire ouverture/clôture (B365 / B365_close) pour une sélection."""
-    return pd.DataFrame({
-        "match_id": [match_id, match_id],
-        "market": [market, market],
-        "selection": [selection, selection],
-        "bookmaker": ["B365", "B365_close"],
-        "is_closing": [0, 1],
-        "odds": [opening, closing],
-    })
+    return pd.DataFrame(
+        {
+            "match_id": [match_id, match_id],
+            "market": [market, market],
+            "selection": [selection, selection],
+            "bookmaker": ["B365", "B365_close"],
+            "is_closing": [0, 1],
+            "odds": [opening, closing],
+        }
+    )
 
 
 class TestOddsMovement:
@@ -34,23 +36,28 @@ class TestOddsMovement:
 
     def test_other_selection_never_used(self):
         # La sélection "home" ne doit pas être affectée par la sélection "away".
-        frame = pd.concat([
-            _pair(selection="home", opening=2.0, closing=1.8),
-            _pair(selection="away", opening=10.0, closing=5.0),
-        ], ignore_index=True)
+        frame = pd.concat(
+            [
+                _pair(selection="home", opening=2.0, closing=1.8),
+                _pair(selection="away", opening=10.0, closing=5.0),
+            ],
+            ignore_index=True,
+        )
         result = calculate_odds_movement(frame, match_id=1, selection="home")
         assert result["odds_movement"] == pytest.approx((1.8 - 2.0) / 2.0)
 
     def test_other_bookmaker_never_forms_pair(self):
         # Un bookmaker d'ouverture (BW) ne forme pas de paire avec B365_close.
-        frame = pd.DataFrame({
-            "match_id": [1, 1],
-            "market": ["1N2", "1N2"],
-            "selection": ["home", "home"],
-            "bookmaker": ["BW", "B365_close"],
-            "is_closing": [0, 1],
-            "odds": [2.2, 1.8],
-        })
+        frame = pd.DataFrame(
+            {
+                "match_id": [1, 1],
+                "market": ["1N2", "1N2"],
+                "selection": ["home", "home"],
+                "bookmaker": ["BW", "B365_close"],
+                "is_closing": [0, 1],
+                "odds": [2.2, 1.8],
+            }
+        )
         result = calculate_odds_movement(frame, match_id=1, selection="home")
         assert result["odds_movement"] is None
 

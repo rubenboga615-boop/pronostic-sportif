@@ -1,8 +1,11 @@
 """Tests des collecteurs de données."""
 
-import pytest
-from collectors.football_data.league_config import get_league_codes, get_league_name, get_all_seasons
-from collectors.football_data.team_normalizer import normalize_team_name, get_all_canonical_names
+from collectors.football_data.league_config import (
+    get_all_seasons,
+    get_league_codes,
+    get_league_name,
+)
+from collectors.football_data.team_normalizer import get_all_canonical_names, normalize_team_name
 
 
 class TestLeagueConfig:

@@ -1,7 +1,5 @@
 """Rapport de calibration du modèle."""
 
-from loguru import logger
-
 from evaluation.metrics import calibration_curve
 
 
@@ -16,10 +14,7 @@ def generate_calibration_report(
     report = {
         "market": market,
         "n_observations": len(y_true),
-        "calibration_curve": [
-            {"predicted": p, "observed": o, "count": c}
-            for p, o, c in curve
-        ],
+        "calibration_curve": [{"predicted": p, "observed": o, "count": c} for p, o, c in curve],
     }
 
     # Calculer le miscalibration moyen

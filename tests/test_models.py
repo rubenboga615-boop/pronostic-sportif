@@ -1,7 +1,9 @@
 """Tests des modèles de prédiction."""
 
-import numpy as np
 import pytest
+
+import models.market_derivation as market_derivation
+from models.market_derivation import fair_odds
 from models.poisson import (
     compute_score_matrix,
     derive_1n2,
@@ -9,8 +11,6 @@ from models.poisson import (
     estimate_lambda,
     poisson_pmf,
 )
-import models.market_derivation as market_derivation
-from models.market_derivation import fair_odds
 
 
 class TestPoissonModel:
