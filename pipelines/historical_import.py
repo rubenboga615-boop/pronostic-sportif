@@ -268,7 +268,13 @@ def _insert_odds(
                 all_present = False
         if not all_present:
             continue
-        captured_at = match_date if pd.notna(match_date) else datetime.now(UTC)
+        # Football-Data.co.uk n'horodate pas ses relevés. Seule la cote de
+        # clôture a un instant connu — le coup d'envoi. Pour l'ouverture,
+        # l'instant reste NULL : le prétendre égal à la date du match ferait
+        # passer une cote non datée pour une cote pré-match exploitable.
+        captured_at = (
+            (match_date if pd.notna(match_date) else datetime.now(UTC)) if is_closing else None
+        )
         for selection, odds_val in odds_values.items():
             snap = OddsSnapshot(
                 match_id=match_id,

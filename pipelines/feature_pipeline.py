@@ -77,7 +77,8 @@ def compute_match_features(
     Règles validées :
     - anti-fuite : seuls les matchs antérieurs à ``match_date`` sont utilisés ;
     - ``rest_days`` et ``elo_rating`` sont choisis selon le côté ;
-    - ``odds_movement`` est calculé par sélection (``home``/``away``) selon le côté ;
+    - ``odds_movement`` est calculé par sélection (``home``/``away``) selon le côté,
+      en n'observant que des cotes capturées avant le coup d'envoi ;
     - ``goal_difference`` n'est fourni que s'il est disponible avant le match ;
     - ``opponent_strength``, ``xg_*`` et ``injury_impact`` restent ``None``.
     """
@@ -105,9 +106,11 @@ def compute_match_features(
 
     for side, team_id in (("home", home_id), ("away", away_id)):
         # Sélection de cote selon le côté : home -> "home", away -> "away".
-        odds_movement = calculate_odds_movement(odds_df, match_id, market="1N2", selection=side)[
-            "odds_movement"
-        ]
+        # Date de coupure = coup d'envoi : aucune cote postérieure, et aucune
+        # cote de clôture, ne peut entrer dans les features.
+        odds_movement = calculate_odds_movement(
+            odds_df, match_id, market="1N2", selection=side, cutoff=match_date
+        )["odds_movement"]
         raw = {
             # par sélection (home -> "home", away -> "away").
             "odds_movement": odds_movement,

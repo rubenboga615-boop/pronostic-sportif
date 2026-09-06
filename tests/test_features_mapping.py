@@ -6,18 +6,20 @@ import pytest
 from features.mapping import map_features_to_columns
 from features.odds_movement import calculate_odds_movement
 
+COUP_D_ENVOI = pd.Timestamp("2024-01-10")
+
 
 def _odds_frame(market: str, selection: str = "home") -> pd.DataFrame:
-    """Paire ouverture/clôture (B365 / B365_close) pour un match/marché/sélection."""
+    """Deux relevés pré-match horodatés (B365), seule forme exploitable."""
     return pd.DataFrame(
         {
             "match_id": [1, 1],
             "market": [market, market],
             "selection": [selection, selection],
-            "bookmaker": ["B365", "B365_close"],
-            "is_closing": [0, 1],
+            "bookmaker": ["B365", "B365"],
+            "is_closing": [0, 0],
             "odds": [2.0, 1.8],
-            "captured_at": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+            "captured_at": pd.to_datetime(["2024-01-01", "2024-01-05"]),
         }
     )
 
@@ -25,13 +27,15 @@ def _odds_frame(market: str, selection: str = "home") -> pd.DataFrame:
 class TestOddsMovementMarket:
     def test_default_market_is_canonical_1N2(self):  # noqa: N802 — « 1N2 » est un identifiant de marché
         """Le défaut doit correspondre au marché stocké en base : '1N2'."""
-        result = calculate_odds_movement(_odds_frame("1N2"), match_id=1)
+        result = calculate_odds_movement(_odds_frame("1N2"), match_id=1, cutoff=COUP_D_ENVOI)
         assert result["odds_movement"] is not None
         assert result["odds_movement"] == pytest.approx((1.8 - 2.0) / 2.0)
 
     def test_lowercase_1n2_does_not_match_stored_data(self):
         """Un marché en minuscules ne doit pas matcher la donnée '1N2'."""
-        result = calculate_odds_movement(_odds_frame("1N2"), match_id=1, market="1n2")
+        result = calculate_odds_movement(
+            _odds_frame("1N2"), match_id=1, market="1n2", cutoff=COUP_D_ENVOI
+        )
         assert result["odds_movement"] is None
 
 

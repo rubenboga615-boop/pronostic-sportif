@@ -148,7 +148,7 @@ class TestRunFeaturePipeline:
         finally:
             session.close()
 
-    def test_target_odds_movement(self, populated_db):
+    def test_target_odds_movement_absent_sans_releves_pre_match(self, populated_db):
         run_feature_pipeline()
         session = SessionLocal()
         try:
@@ -162,9 +162,10 @@ class TestRunFeaturePipeline:
                 .filter_by(match_id=populated_db["target_id"], team_id=populated_db["t2"])
                 .first()
             )
-            # home -> "home" (2.0 -> 1.8) ; away -> "away" (5.0 -> 4.0).
-            assert home.odds_movement == pytest.approx((1.8 - 2.0) / 2.0)
-            assert away.odds_movement == pytest.approx((4.0 - 5.0) / 5.0)
+            # Les cotes de la fixture sont une ouverture et une clôture : la
+            # clôture est écartée, une seule cote ne fait pas un mouvement.
+            assert home.odds_movement is None
+            assert away.odds_movement is None
         finally:
             session.close()
 

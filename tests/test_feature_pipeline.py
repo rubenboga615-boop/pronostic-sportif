@@ -50,7 +50,11 @@ def _target_match() -> pd.Series:
 
 
 def _odds_df() -> pd.DataFrame:
-    """Paires ouverture/clôture (B365 -> B365_close) pour home (2.0->1.8) et away (5.0->4.0)."""
+    """Cotes telles que Football-Data les livre : ouverture non datée + clôture.
+
+    Aucune des deux n'est exploitable — l'ouverture n'a pas d'horodatage, la
+    clôture est postérieure au coup d'envoi.
+    """
     return pd.DataFrame(
         {
             "match_id": [100, 100, 100, 100],
@@ -58,6 +62,21 @@ def _odds_df() -> pd.DataFrame:
             "selection": ["home", "home", "away", "away"],
             "bookmaker": ["B365", "B365_close", "B365", "B365_close"],
             "is_closing": [0, 1, 0, 1],
+            "odds": [2.0, 1.8, 5.0, 4.0],
+            "captured_at": pd.to_datetime([None, "2024-03-01", None, "2024-03-01"]),
+        }
+    )
+
+
+def _odds_df_pre_match() -> pd.DataFrame:
+    """Série de relevés pré-match horodatés, comme en fournira API-Football."""
+    return pd.DataFrame(
+        {
+            "match_id": [100] * 4,
+            "market": ["1N2"] * 4,
+            "selection": ["home", "home", "away", "away"],
+            "bookmaker": ["B365"] * 4,
+            "is_closing": [0, 0, 0, 0],
             "odds": [2.0, 1.8, 5.0, 4.0],
             "captured_at": pd.to_datetime(["2024-02-01", "2024-02-28", "2024-02-01", "2024-02-28"]),
         }
@@ -106,8 +125,16 @@ class TestComputeMatchFeatures:
         assert result["home"]["rest_days"] == 15
         assert result["away"]["rest_days"] == 10
 
-    def test_odds_movement_per_selection(self):
+    def test_odds_movement_absent_avec_les_cotes_football_data(self):
+        """Ouverture non datée et clôture : aucun mouvement ne doit être produit."""
         result = compute_match_features(_target_match(), _prior_df(), _odds_df())
+
+        for side in ("home", "away"):
+            assert result[side].get("odds_movement") is None
+
+    def test_odds_movement_per_selection(self):
+        """Avec de vrais relevés pré-match, le mouvement est calculé par sélection."""
+        result = compute_match_features(_target_match(), _prior_df(), _odds_df_pre_match())
         # home -> sélection "home" (2.0 -> 1.8) ; away -> sélection "away" (5.0 -> 4.0).
         assert result["home"]["odds_movement"] == pytest.approx((1.8 - 2.0) / 2.0)
         assert result["away"]["odds_movement"] == pytest.approx((4.0 - 5.0) / 5.0)
