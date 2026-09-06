@@ -7,14 +7,26 @@ def calculate_standings(
     matches_df: pd.DataFrame,
     match_date: pd.Timestamp,
     competition_id: int | None = None,
+    season_id: int | None = None,
 ) -> pd.DataFrame:
     """Calculer le classement au moment d'un match donné.
+
+    Un classement n'a de sens qu'à l'intérieur d'une saison : les points, la
+    différence de buts et la position repartent de zéro à chaque exercice.
+    Fournir ``season_id`` restreint le calcul à cette saison ; l'omettre cumule
+    toutes les saisons présentes dans ``matches_df``, ce qui ne correspond à
+    aucun classement réel.
+
+    Le classement est ordonné aux points, puis à la différence de buts, puis
+    aux buts marqués — l'ordre usuel des cinq grands championnats.
 
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
     relevant = matches_df[matches_df["match_date"] < match_date]
     if competition_id is not None:
         relevant = relevant[relevant["competition_id"] == competition_id]
+    if season_id is not None and "season_id" in relevant.columns:
+        relevant = relevant[relevant["season_id"] == season_id]
 
     if relevant.empty:
         return pd.DataFrame()
@@ -65,7 +77,8 @@ def calculate_standings(
 
     df = pd.DataFrame.from_dict(standings, orient="index")
     df.index.name = "team_id"
-    df = df.sort_values("points", ascending=False)
+    df["goal_difference"] = df["gf"] - df["ga"]
+    df = df.sort_values(["points", "goal_difference", "gf"], ascending=[False, False, False])
     df["position"] = range(1, len(df) + 1)
 
     return df

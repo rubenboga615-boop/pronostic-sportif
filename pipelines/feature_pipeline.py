@@ -7,7 +7,7 @@ from loguru import logger
 
 from app.database import SessionLocal
 from app.models import Feature
-from features.elo import DEFAULT_ELO, update_elo
+from features.elo import DEFAULT_ELO, regress_towards_mean, update_elo
 from features.form import calculate_form_features
 from features.home_away import calculate_home_away_features
 from features.mapping import map_features_to_columns
@@ -32,7 +32,7 @@ def run_feature_pipeline() -> dict[str, int]:
     session = SessionLocal()
     try:
         matches_df = pd.read_sql_query(
-            "SELECT id, competition_id, match_date, home_team_id, away_team_id, "
+            "SELECT id, competition_id, season_id, match_date, home_team_id, away_team_id, "
             "home_goals, away_goals, home_shots, away_shots, "
             "home_shots_on_target, away_shots_on_target "
             "FROM matches ORDER BY match_date, id",
@@ -86,15 +86,20 @@ def compute_match_features(
     away_id = int(match["away_team_id"])
     match_id = int(match["id"])
     competition_id = match.get("competition_id")
+    season_id = match.get("season_id")
+    if pd.isna(season_id):
+        season_id = None
 
     # Anti-fuite : uniquement les matchs strictement antérieurs à la cible.
     prior = prior_matches_df[prior_matches_df["match_date"] < match_date]
 
     # Grandeurs partagées, calculées une seule fois.
-    rest = calculate_rest_features(prior, home_id, away_id, match_date)
-    standings = calculate_standings(prior, match_date, competition_id=competition_id)
-    elo_home = _compute_elo_before(prior, home_id)
-    elo_away = _compute_elo_before(prior, away_id)
+    rest = calculate_rest_features(prior, home_id, away_id, match_date, season_id=season_id)
+    standings = calculate_standings(
+        prior, match_date, competition_id=competition_id, season_id=season_id
+    )
+    elo_home = _compute_elo_before(prior, home_id, season_id=season_id)
+    elo_away = _compute_elo_before(prior, away_id, season_id=season_id)
 
     result: dict[str, dict[str, Any]] = {}
 
@@ -130,16 +135,23 @@ def compute_match_features(
     return result
 
 
-def _compute_elo_before(prior_df: pd.DataFrame, team_id: int) -> float:
+def _compute_elo_before(
+    prior_df: pd.DataFrame, team_id: int, season_id: int | None = None
+) -> float:
     """Elo pré-match d'une équipe, calculé sur les seuls matchs antérieurs.
 
     Rejoue la boucle Elo chronologiquement ; les matchs sans buts renseignés sont
-    ignorés. Retourne l'Elo courant (pré-match) de ``team_id``, ou ``DEFAULT_ELO``
-    si aucun historique.
+    ignorés. Le rating est conservé d'une saison à l'autre mais ramené vers la
+    moyenne à chaque changement de saison (voir ``regress_towards_mean``), y
+    compris pour la saison du match cible lorsque ``season_id`` est fourni.
+
+    Retourne l'Elo pré-match de ``team_id``, ou ``DEFAULT_ELO`` si aucun
+    historique.
     """
     team_ids = set(prior_df["home_team_id"].dropna()) | set(prior_df["away_team_id"].dropna())
     ratings: dict[int, float] = {int(tid): DEFAULT_ELO for tid in team_ids}
     ratings.setdefault(team_id, DEFAULT_ELO)
+    last_season: dict[int, object] = {}
 
     for _, m in prior_df.sort_values("match_date").iterrows():
         hg = m.get("home_goals")
@@ -148,6 +160,9 @@ def _compute_elo_before(prior_df: pd.DataFrame, team_id: int) -> float:
             continue
         hid = int(m["home_team_id"])
         aid = int(m["away_team_id"])
+        season = m.get("season_id")
+        for tid in (hid, aid):
+            _apply_season_regression(ratings, last_season, tid, season)
         he = ratings.get(hid, DEFAULT_ELO)
         ae = ratings.get(aid, DEFAULT_ELO)
         hg, ag = int(hg), int(ag)
@@ -160,7 +175,26 @@ def _compute_elo_before(prior_df: pd.DataFrame, team_id: int) -> float:
         ratings[hid] = nh
         ratings[aid] = na
 
+    # Le match cible peut ouvrir une nouvelle saison pour cette équipe.
+    if season_id is not None:
+        _apply_season_regression(ratings, last_season, team_id, season_id)
+
     return ratings.get(team_id, DEFAULT_ELO)
+
+
+def _apply_season_regression(
+    ratings: dict[int, float],
+    last_season: dict[int, object],
+    team_id: int,
+    season: object,
+) -> None:
+    """Ramener le rating vers la moyenne si l'équipe entre dans une saison neuve."""
+    if season is None or (isinstance(season, float) and pd.isna(season)):
+        return
+    previous = last_season.get(team_id)
+    if previous is not None and previous != season:
+        ratings[team_id] = regress_towards_mean(ratings.get(team_id, DEFAULT_ELO))
+    last_season[team_id] = season
 
 
 def _goal_difference(standings: pd.DataFrame, team_id: int) -> int | None:

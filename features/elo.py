@@ -5,6 +5,19 @@ import pandas as pd
 DEFAULT_ELO = 1500
 K_FACTOR = 32
 
+# Part du rating conservée d'une saison à l'autre. Un Elo purement cumulatif
+# fige les hiérarchies : il ignore les mouvements d'intersaison (transferts,
+# changements d'entraîneur) et surtout le fait qu'une équipe promue hérite
+# d'un rating gagné en division inférieure. Un Elo remis à zéro à chaque
+# saison, à l'inverse, jette toute l'information des saisons précédentes.
+# La pratique courante conserve les trois quarts de l'écart à la moyenne.
+SEASON_CARRY_OVER = 0.75
+
+
+def regress_towards_mean(elo: float, carry_over: float = SEASON_CARRY_OVER) -> float:
+    """Ramener un rating vers la moyenne au passage d'une saison à l'autre."""
+    return DEFAULT_ELO + carry_over * (elo - DEFAULT_ELO)
+
 
 def expected_score(elo_a: float, elo_b: float) -> float:
     """Calculer le score attendu entre deux équipes."""

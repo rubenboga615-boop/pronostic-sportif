@@ -7,8 +7,17 @@ def calculate_rest_days(
     matches_df: pd.DataFrame,
     team_id: int,
     match_date: pd.Timestamp,
+    season_id: int | None = None,
 ) -> int | None:
     """Calculer les jours de repos d'une équipe avant un match.
+
+    Fournir ``season_id`` restreint le calcul à la saison en cours. Sans cette
+    borne, l'écart avec le dernier match de la saison précédente est compté
+    comme du repos : la trêve estivale produit alors des valeurs de 90 jours et
+    plus, qui ne mesurent aucune fraîcheur.
+
+    Retourne ``None`` en première journée de saison : l'information n'existe
+    pas, et une valeur plausible ne doit jamais lui être substituée.
 
     ⚠️ Anti-fuite : seuls les matchs AVANT match_date sont utilisés.
     """
@@ -16,6 +25,9 @@ def calculate_rest_days(
         ((matches_df["home_team_id"] == team_id) | (matches_df["away_team_id"] == team_id))
         & (matches_df["match_date"] < match_date)
     ].sort_values("match_date")
+
+    if season_id is not None and "season_id" in team_matches.columns:
+        team_matches = team_matches[team_matches["season_id"] == season_id]
 
     if team_matches.empty:
         return None
@@ -33,10 +45,11 @@ def calculate_rest_features(
     home_team_id: int,
     away_team_id: int,
     match_date: pd.Timestamp,
+    season_id: int | None = None,
 ) -> dict:
     """Calculer les features de repos pour les deux équipes."""
-    home_rest = calculate_rest_days(matches_df, home_team_id, match_date)
-    away_rest = calculate_rest_days(matches_df, away_team_id, match_date)
+    home_rest = calculate_rest_days(matches_df, home_team_id, match_date, season_id)
+    away_rest = calculate_rest_days(matches_df, away_team_id, match_date, season_id)
 
     features = {
         "home_rest_days": home_rest,
