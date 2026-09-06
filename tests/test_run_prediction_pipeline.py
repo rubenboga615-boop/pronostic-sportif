@@ -1,5 +1,6 @@
 """Tests du pipeline de prédiction intégré (base temporaire)."""
 
+import os
 from datetime import datetime, timedelta
 
 import pytest
@@ -13,6 +14,15 @@ from pipelines.prediction_pipeline import (
 )
 
 ORIG_DB = "data/pronostic.db"
+
+# La base de production n'est pas versionnée : sur un clone neuf ou en
+# intégration continue, elle est absente et ce garde-fou n'a rien à vérifier.
+# Il reste actif dès qu'elle existe, c'est-à-dire sur les machines où une
+# écriture accidentelle serait réellement dommageable.
+requires_production_db = pytest.mark.skipif(
+    not os.path.exists(ORIG_DB),
+    reason=f"{ORIG_DB} absent : garde-fou sans objet sur cette machine",
+)
 
 # Date de coupure fixe pour tous les tests : jamais dérivée de datetime.now().
 # L'historique des seeds se situe en 2024, les matchs cibles en 2025-06.
@@ -537,10 +547,10 @@ class TestRunPredictionPipeline:
             assert versions[0][0] == "test-v2"
 
 
+@requires_production_db
 class TestOriginalDatabaseUntouched:
     def test_sha_size_mtime_unchanged(self):
         import hashlib
-        import os
 
         sha_before = hashlib.sha256(open(ORIG_DB, "rb").read()).hexdigest()
         size_before = os.path.getsize(ORIG_DB)

@@ -14,6 +14,15 @@ from pipelines.prediction_pipeline import generate_predictions_for_matches
 
 ORIG_DB = "data/pronostic.db"
 
+# La base de production n'est pas versionnée : sur un clone neuf ou en
+# intégration continue, elle est absente et ce garde-fou n'a rien à vérifier.
+# Il reste actif dès qu'elle existe, c'est-à-dire sur les machines où une
+# écriture accidentelle serait réellement dommageable.
+requires_production_db = pytest.mark.skipif(
+    not os.path.exists(ORIG_DB),
+    reason=f"{ORIG_DB} absent : garde-fou sans objet sur cette machine",
+)
+
 
 @pytest.fixture()
 def db(tmp_path):
@@ -162,6 +171,7 @@ class TestGeneratePredictionsForMatches:
         assert len(report["failed"][0]["error"]) > 0
 
 
+@requires_production_db
 class TestOriginalDatabaseUntouched:
     def test_sha_size_mtime_unchanged(self):
         sha_before = hashlib.sha256(open(ORIG_DB, "rb").read()).hexdigest()
