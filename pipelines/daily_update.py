@@ -1,11 +1,13 @@
 """Pipeline de mise à jour quotidienne."""
 
+from datetime import datetime
+
 from loguru import logger
 
 
 def run_daily_update() -> None:
     """Exécuter le pipeline de mise à jour quotidienne.
-    
+
     Étapes :
     1. Télécharger les nouveaux CSV
     2. Collecter les matchs à venir (48h)
@@ -67,7 +69,10 @@ def _step_validate():
 def _step_predict():
     from pipelines.prediction_pipeline import run_prediction_pipeline
 
-    run_prediction_pipeline()
+    # Date de coupure fournie explicitement par l'appelant (ici : maintenant).
+    # Seuls les matchs strictement postérieurs à cette date sont prédits ;
+    # le pipeline ne doit jamais l'inférer implicitement.
+    run_prediction_pipeline(reference_date=datetime.now())
 
 
 def _step_backup():

@@ -173,15 +173,45 @@ def generate_predictions_for_matches(
     }
 
 
-def _select_matches_ready_for_prediction(session) -> list[int]:
+def _select_matches_ready_for_prediction(session, reference_date) -> list[int]:
     """Sélectionner les matchs pour lesquels générer des prédictions.
 
-    Retourne les ``match_id`` des matchs qui ont :
-    - une ``match_date`` renseignée
-    - une ``Feature`` domicile **et** une ``Feature`` extérieure
+    Règle temporelle (date de coupure) :
+    -------------------------------
+    La prédiction pré-match ne concerne que les matchs dont la date est
+    **strictement postérieure** à la date de référence fournie explicitement
+    par l'appelant : ``match_date > reference_date``.
 
-    Les résultats sont triés par date croissante puis ``id``.
+    - Un match daté à la date de référence ou avant est considéré comme déjà
+      connu (terminé ou en cours) et n'est **jamais** sélectionné, même si ses
+      features existent : la présence de features ne rend pas un match passé
+      prédictible.
+    - ``reference_date`` est obligatoire et fournie par l'appelant : la
+      fonction n'appelle jamais ``datetime.now()`` elle-même (aucune
+      dépendance implicite au moment de l'exécution, résultat déterministe et
+      testable).
+    - Les matchs sans ``match_date`` sont exclus.
+    - Les matchs sans ``Feature`` domicile **et** extérieure sont exclus.
+    - Le tri chronologique (``match_date`` puis ``id``) rend le résultat
+      déterministe ; ``id`` n'est pas utilisé comme indicateur chronologique.
+
+    Args:
+        session: Session SQLAlchemy.
+        reference_date: Date de coupure des données. Seuls les matchs avec
+            ``match_date > reference_date`` sont retenus.
+
+    Returns:
+        Liste triée des ``match_id`` éligibles.
+
+    Raises:
+        ValueError: si ``reference_date`` est ``None``.
     """
+    if reference_date is None:
+        raise ValueError(
+            "reference_date est obligatoire : la date de coupure doit être "
+            "fournie explicitement par l'appelant"
+        )
+
     from sqlalchemy import orm
 
     from app.models import Feature
@@ -194,6 +224,7 @@ def _select_matches_ready_for_prediction(session) -> list[int]:
         .join(fh, (fh.match_id == Match.id) & (fh.team_id == Match.home_team_id))
         .join(fa, (fa.match_id == Match.id) & (fa.team_id == Match.away_team_id))
         .filter(Match.match_date.isnot(None))
+        .filter(Match.match_date > reference_date)
         .order_by(Match.match_date, Match.id)
         .all()
     )
@@ -203,21 +234,41 @@ def _select_matches_ready_for_prediction(session) -> list[int]:
 def run_prediction_pipeline(
     engine=None,
     model_version: str = "poisson-v1",
+    *,
+    reference_date,
 ) -> dict[str, Any]:
     """Exécuter le pipeline de prédiction.
 
-    Sélectionne les matchs prêts (features disponibles), génère les prédictions
-    via ``generate_predictions_for_matches``, et retourne un rapport structuré.
+    Sélectionne les matchs prêts dont la date est strictement postérieure à la
+    date de référence, génère les prédictions via
+    ``generate_predictions_for_matches``, et retourne un rapport structuré.
+
+    Règle temporelle : seul un match avec ``match_date > reference_date`` est
+    prédit. Les matchs passés ou datés à la date de coupure sont exclus même
+    si leurs features existent (voir ``_select_matches_ready_for_prediction``).
 
     Transaction indépendante par match (via ``generate_predictions_for_matches``).
 
     Args:
         engine: Moteur SQLAlchemy. Si ``None``, utilise ``app.database.engine``.
         model_version: Version du modèle (défaut ``"poisson-v1"``).
+        reference_date: Date de coupure des données (obligatoire, keyword-only).
+            L'appelant la fournit explicitement — typiquement ``datetime.now()``
+            pour une exécution quotidienne, ou une date fixe dans les tests.
+            Le pipeline ne l'infère jamais lui-même.
 
     Returns:
         Rapport ``{succeeded, failed, predictions_created_or_updated}``.
+
+    Raises:
+        ValueError: si ``reference_date`` est ``None``.
     """
+    if reference_date is None:
+        raise ValueError(
+            "reference_date est obligatoire : la date de coupure doit être "
+            "fournie explicitement par l'appelant"
+        )
+
     from app.database import SessionLocal
 
     if engine is None:
@@ -229,9 +280,10 @@ def run_prediction_pipeline(
 
     session = SessionLocal(bind=engine)
     try:
-        # Étape 1 : Sélection des matchs prêts
+        # Étape 1 : Sélection des matchs prêts (match_date > reference_date)
         logger.info("Étape 1 : Sélection des matchs prêts...")
-        match_ids = _select_matches_ready_for_prediction(session)
+        logger.info(f"  Règle temporelle : match_date > {reference_date.isoformat()}")
+        match_ids = _select_matches_ready_for_prediction(session, reference_date)
         logger.info(f"  {len(match_ids)} matchs sélectionnés")
 
         if not match_ids:
@@ -267,4 +319,6 @@ def run_prediction_pipeline(
 
 
 if __name__ == "__main__":
-    run_prediction_pipeline()
+    # Date de coupure fournie explicitement par le point d'entrée CLI :
+    # prédire uniquement les matchs strictement postérieurs à maintenant.
+    run_prediction_pipeline(reference_date=datetime.now())
