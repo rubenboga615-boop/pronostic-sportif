@@ -113,6 +113,7 @@ def generate_match_predictions(
     session,
     match_id: int,
     model_version: str = "poisson-v1",
+    model=None,
 ) -> list[Prediction]:
     """Générer et persister les prédictions d'un match (anti-fuite, idempotent).
 
@@ -120,7 +121,7 @@ def generate_match_predictions(
     idempotente (``persist_predictions``). Un second appel sur le même match met
     à jour les lignes existantes sans créer de doublon.
     """
-    predictions = build_match_predictions(session, match_id)
+    predictions = build_match_predictions(session, match_id, model=model)
     return persist_predictions(session, match_id, model_version, predictions)
 
 
@@ -128,6 +129,7 @@ def generate_predictions_for_matches(
     session,
     match_ids: Sequence[int],
     model_version: str = "poisson-v1",
+    model=None,
 ) -> dict[str, Any]:
     """Générer et persister les prédictions pour une liste explicite de matchs.
 
@@ -153,7 +155,7 @@ def generate_predictions_for_matches(
 
     for match_id in match_ids:
         try:
-            results = generate_match_predictions(session, match_id, model_version)
+            results = generate_match_predictions(session, match_id, model_version, model=model)
             succeeded.append(match_id)
             total_predictions += len(results)
         except Exception as exc:
@@ -164,6 +166,33 @@ def generate_predictions_for_matches(
         "failed": failed,
         "predictions_created_or_updated": total_predictions,
     }
+
+
+def charger_modele(model_version: str, registry_dir: str | None = None):
+    """Charger un modèle ajusté depuis le registre, ou None s'il n'y en a pas.
+
+    Le nom du modèle est déduit de la version : « dixon-coles-2024-06 » cherche
+    un modèle « dixon_coles ». Une version qui ne correspond à aucun modèle
+    enregistré laisse le pipeline sur son moteur de repli, sans échouer : mieux
+    vaut des prédictions moins fines que pas de prédictions du tout.
+    """
+    if not model_version.lower().startswith(("dixon", "dc")):
+        return None
+
+    from models.dixon_coles import DixonColesModel
+    from models.model_registry import ModelRegistry
+
+    registre = ModelRegistry(registry_dir) if registry_dir else ModelRegistry()
+    parametres = registre.load("dixon_coles", model_version)
+    if parametres is None:
+        parametres = registre.load("dixon_coles")
+    if parametres is None:
+        logger.warning(
+            f"Aucun modèle Dixon-Coles enregistré pour {model_version!r} : "
+            "le moteur de repli est utilisé"
+        )
+        return None
+    return DixonColesModel.from_dict(parametres)
 
 
 def _select_matches_ready_for_prediction(session, reference_date) -> list[int]:
@@ -229,6 +258,7 @@ def run_prediction_pipeline(
     model_version: str = "poisson-v1",
     *,
     reference_date,
+    model=None,
 ) -> dict[str, Any]:
     """Exécuter le pipeline de prédiction.
 
@@ -269,7 +299,11 @@ def run_prediction_pipeline(
 
         engine = default_engine
 
+    if model is None:
+        model = charger_modele(model_version)
+
     logger.info("=== Début du pipeline de prédiction ===")
+    logger.info(f"  moteur : {'Dixon-Coles ajusté' if model is not None else 'Poisson de repli'}")
 
     session = SessionLocal(bind=engine)
     try:
@@ -290,7 +324,7 @@ def run_prediction_pipeline(
 
         # Étape 2 : Génération des prédictions
         logger.info("Étape 2 : Génération des prédictions...")
-        report = generate_predictions_for_matches(session, match_ids, model_version)
+        report = generate_predictions_for_matches(session, match_ids, model_version, model=model)
 
         logger.info(
             f"  {report['predictions_created_or_updated']} prédictions "

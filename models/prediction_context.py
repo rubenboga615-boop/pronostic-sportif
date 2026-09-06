@@ -10,7 +10,11 @@ from __future__ import annotations
 from typing import Any
 
 from app.models import Feature, Match
-from models.market_assembly import build_match_markets, estimate_match_lambdas
+from models.market_assembly import (
+    build_markets_from_matrix,
+    build_match_markets,
+    estimate_match_lambdas,
+)
 
 DEFAULT_HOME_ADVANTAGE = 0.25
 
@@ -47,19 +51,50 @@ def build_match_predictions(
     session,
     target_match_id: int,
     home_advantage: float = DEFAULT_HOME_ADVANTAGE,
+    model=None,
 ) -> list[dict[str, Any]]:
     """Produire les 16 prédictions normalisées d'un match cible (sans écriture).
 
-    Retourne la liste au format ``{"market", "selection", "probability",
-    "fair_odds"}`` avec les identifiants publics, sans écrire en base.
+    Args:
+        session: session SQLAlchemy.
+        target_match_id: match à prédire.
+        home_advantage: avantage du terrain du moteur de repli.
+        model: modèle Dixon-Coles ajusté. S'il connaît les deux équipes, c'est
+            lui qui produit la matrice de scores ; sinon le moteur de repli
+            prend le relais, à partir des moyennes glissantes de buts.
+
+    Returns:
+        La liste au format ``{"market", "selection", "probability",
+        "fair_odds"}`` avec les identifiants publics.
     """
-    _, home_features, away_features, league_avg_goals = _load_context(session, target_match_id)
+    target_match, home_features, away_features, league_avg_goals = _load_context(
+        session, target_match_id
+    )
+
+    if _modele_utilisable(model, target_match):
+        matrice = model.score_matrix(target_match.home_team_id, target_match.away_team_id)
+        return build_markets_from_matrix(matrice)
+
     return build_match_markets(
         home_features,
         away_features,
         league_avg_goals,
         home_advantage=home_advantage,
     )
+
+
+def _modele_utilisable(model, target_match: Match) -> bool:
+    """Le modèle connaît-il les deux équipes de ce match ?
+
+    Une équipe absente de l'entraînement serait traitée comme moyenne. C'est
+    acceptable en dépannage, mais la prédiction serait alors bien moins fondée
+    que celle du moteur de repli, qui dispose au moins des moyennes récentes de
+    cette équipe. On préfère donc le repli.
+    """
+    if model is None:
+        return False
+    connues = getattr(model, "teams", set())
+    return target_match.home_team_id in connues and target_match.away_team_id in connues
 
 
 def _load_context(session, target_match_id: int):

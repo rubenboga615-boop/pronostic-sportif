@@ -135,7 +135,21 @@ def build_match_markets(
         home_advantage=home_advantage,
     )
     score_matrix = compute_score_matrix(lambda_home, lambda_away, max_goals=max_goals)
+    return build_markets_from_matrix(score_matrix)
 
+
+def build_markets_from_matrix(score_matrix) -> list[dict[str, Any]]:
+    """Dériver les marchés de match entier depuis une matrice de scores.
+
+    Point d'entrée commun aux deux moteurs : la matrice peut venir du Poisson
+    alimenté par les moyennes glissantes, ou d'un Dixon-Coles ajusté. Les
+    marchés dérivés, eux, ne dépendent que de la matrice.
+
+    Returns:
+        ``list[dict]`` de 16 prédictions au format
+        ``{"market", "selection", "probability", "fair_odds"}``, aux
+        identifiants publics.
+    """
     markets: list[dict[str, Any]] = []
     probs_1n2 = derive_1n2(score_matrix)
     markets.extend(probs_1n2)
