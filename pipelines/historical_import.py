@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 from loguru import logger
+from sqlalchemy import null
 
 from app.config import settings
 from app.database import SessionLocal, engine
@@ -39,34 +40,113 @@ from collectors.football_data.team_normalizer import normalize_team_name
 # ──────────────────────────────────────────────
 # Bookmaker odds columns mapping
 # ──────────────────────────────────────────────
-BOOKMAKER_MAP: dict[str, dict[str, str]] = {
-    "B365": {
-        "home": "odds_b365_home",
-        "draw": "odds_b365_draw",
-        "away": "odds_b365_away",
+# Séries de cotes lues dans les CSV, par bookmaker et par marché.
+#
+# La convention de nommage « B365_close » pour la clôture est celle des données
+# déjà en base ; `is_closing` reste le discriminant fiable, et c'est lui
+# qu'utilisent les features.
+#
+# Le marché over_under est ajouté ici : ses colonnes existaient dans les
+# fichiers depuis toujours mais n'étaient pas lues, ce qui rendait impossible
+# le calcul d'un edge sur l'un des marchés de la Phase 1.
+SERIES_DE_COTES: tuple[dict[str, object], ...] = (
+    {
+        "bookmaker": "B365",
+        "market": "1N2",
+        "is_closing": False,
+        "selections": {
+            "home": "odds_b365_home",
+            "draw": "odds_b365_draw",
+            "away": "odds_b365_away",
+        },
     },
-    "B365_close": {
-        "home": "odds_b365_close_home",
-        "draw": "odds_b365_close_draw",
-        "away": "odds_b365_close_away",
+    {
+        "bookmaker": "B365_close",
+        "market": "1N2",
         "is_closing": True,
+        "selections": {
+            "home": "odds_b365_close_home",
+            "draw": "odds_b365_close_draw",
+            "away": "odds_b365_close_away",
+        },
     },
-    "BW": {
-        "home": "odds_bw_home",
-        "draw": "odds_bw_draw",
-        "away": "odds_bw_away",
+    {
+        "bookmaker": "BW",
+        "market": "1N2",
+        "is_closing": False,
+        "selections": {
+            "home": "odds_bw_home",
+            "draw": "odds_bw_draw",
+            "away": "odds_bw_away",
+        },
     },
-    "IW": {
-        "home": "odds_iw_home",
-        "draw": "odds_iw_draw",
-        "away": "odds_iw_away",
+    {
+        "bookmaker": "IW",
+        "market": "1N2",
+        "is_closing": False,
+        "selections": {
+            "home": "odds_iw_home",
+            "draw": "odds_iw_draw",
+            "away": "odds_iw_away",
+        },
     },
-    "PS": {
-        "home": "odds_pinnacle_home",
-        "draw": "odds_pinnacle_draw",
-        "away": "odds_pinnacle_away",
+    {
+        "bookmaker": "PS",
+        "market": "1N2",
+        "is_closing": False,
+        "selections": {
+            "home": "odds_pinnacle_home",
+            "draw": "odds_pinnacle_draw",
+            "away": "odds_pinnacle_away",
+        },
     },
-}
+    {
+        "bookmaker": "PS_close",
+        "market": "1N2",
+        "is_closing": True,
+        "selections": {
+            "home": "odds_pinnacle_close_home",
+            "draw": "odds_pinnacle_close_draw",
+            "away": "odds_pinnacle_close_away",
+        },
+    },
+    {
+        "bookmaker": "B365",
+        "market": "over_under",
+        "is_closing": False,
+        "selections": {
+            "over_2.5": "odds_b365_over_25",
+            "under_2.5": "odds_b365_under_25",
+        },
+    },
+    {
+        "bookmaker": "B365_close",
+        "market": "over_under",
+        "is_closing": True,
+        "selections": {
+            "over_2.5": "odds_b365_close_over_25",
+            "under_2.5": "odds_b365_close_under_25",
+        },
+    },
+    {
+        "bookmaker": "PS",
+        "market": "over_under",
+        "is_closing": False,
+        "selections": {
+            "over_2.5": "odds_pinnacle_over_25",
+            "under_2.5": "odds_pinnacle_under_25",
+        },
+    },
+    {
+        "bookmaker": "PS_close",
+        "market": "over_under",
+        "is_closing": True,
+        "selections": {
+            "over_2.5": "odds_pinnacle_close_over_25",
+            "under_2.5": "odds_pinnacle_close_under_25",
+        },
+    },
+)
 
 
 # ──────────────────────────────────────────────
@@ -253,40 +333,50 @@ def _insert_odds(
     row: pd.Series,
     match_date,
 ) -> int:
-    """Insérer les cotes pour un match. Retourne le nombre de snapshots insérés."""
+    """Insérer les cotes d'un match. Retourne le nombre de relevés insérés.
+
+    Une série n'est insérée que complète : sans les trois cotes d'un 1N2 ou les
+    deux d'un Over/Under, la marge du bookmaker n'est pas calculable et la
+    série partielle n'aurait pas de sens.
+    """
     inserted = 0
-    for bookmaker, odds_cols in BOOKMAKER_MAP.items():
-        is_closing = odds_cols.get("is_closing", False)
-        selection_map = {k: v for k, v in odds_cols.items() if k != "is_closing"}
-        odds_values: dict[str, float] = {}
-        all_present = True
-        for selection, col_name in selection_map.items():
-            val = row.get(col_name)
+    for serie in SERIES_DE_COTES:
+        is_closing = bool(serie["is_closing"])
+        valeurs: dict[str, float] = {}
+        complete = True
+        for selection, colonne in serie["selections"].items():
+            val = row.get(colonne)
             if pd.notna(val) and val > 0:
-                odds_values[selection] = float(val)
+                valeurs[selection] = float(val)
             else:
-                all_present = False
-        if not all_present:
+                complete = False
+        if not complete:
             continue
+
         # Football-Data.co.uk n'horodate pas ses relevés. Seule la cote de
         # clôture a un instant connu — le coup d'envoi. Pour l'ouverture,
         # l'instant reste NULL : le prétendre égal à la date du match ferait
         # passer une cote non datée pour une cote pré-match exploitable.
+        #
+        # `null()` et non `None` : la colonne porte un `default=utcnow` que
+        # SQLAlchemy appliquerait sinon, redatant silencieusement le relevé au
+        # moment de l'import.
         captured_at = (
-            (match_date if pd.notna(match_date) else datetime.now(UTC)) if is_closing else None
+            (match_date if pd.notna(match_date) else datetime.now(UTC)) if is_closing else null()
         )
-        for selection, odds_val in odds_values.items():
-            snap = OddsSnapshot(
-                match_id=match_id,
-                bookmaker=bookmaker,
-                market="1N2",
-                selection=selection,
-                odds=odds_val,
-                captured_at=captured_at,
-                is_closing=is_closing,
-                source="football_data",
+        for selection, cote in valeurs.items():
+            session.add(
+                OddsSnapshot(
+                    match_id=match_id,
+                    bookmaker=serie["bookmaker"],
+                    market=serie["market"],
+                    selection=selection,
+                    odds=cote,
+                    captured_at=captured_at,
+                    is_closing=is_closing,
+                    source="football_data",
+                )
             )
-            session.add(snap)
             inserted += 1
     return inserted
 
@@ -297,13 +387,26 @@ def _insert_odds(
 
 
 def _write_quality_report(report: dict, output_dir: Path) -> Path:
-    """Écrire le rapport de qualité en JSON."""
+    """Écrire le rapport de qualité en JSON, horodaté et archivé.
+
+    Un nom fixe écrasait le rapport précédent à chaque exécution : la trace de
+    l'import qui avait réellement chargé les données était perdue, et le
+    « journal des sources » attendu au livrable de première année restait
+    impossible à constituer. Chaque exécution laisse désormais son propre
+    fichier ; ``import_report.json`` continue de pointer sur la dernière.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    report_path = output_dir / "import_report.json"
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, default=str)
-    logger.info(f"Rapport de qualité écrit : {report_path}")
-    return report_path
+
+    horodatage = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    archive = output_dir / f"import_report_{horodatage}.json"
+    contenu = json.dumps(report, indent=2, default=str, ensure_ascii=False)
+    archive.write_text(contenu, encoding="utf-8")
+
+    dernier = output_dir / "import_report.json"
+    dernier.write_text(contenu, encoding="utf-8")
+
+    logger.info(f"Rapport de qualité écrit : {archive}")
+    return archive
 
 
 # ──────────────────────────────────────────────
@@ -356,6 +459,7 @@ def run_historical_import(
         "stats_inserted": 0,
         # Qualité (advisory, non bloquant)
         "validation_warnings": 0,
+        "colonnes_absentes": {},
         "warnings": [],
         "errors": [],
     }
@@ -481,6 +585,17 @@ def _process_file(session, csv_file: Path, report: dict) -> dict:
         return file_report
 
     file_report["processed"] = 1
+
+    # Changements de format de la source : une colonne attendue qui disparaît
+    # ne doit jamais passer inaperçue.
+    inspection = df.attrs.get("colonnes", {})
+    for colonne in inspection.get("manquantes_requises", []):
+        report["errors"].append(f"{csv_file.name} : colonne requise absente ({colonne})")
+    if inspection.get("manquantes_tolerees"):
+        report["colonnes_absentes"][csv_file.name] = inspection["manquantes_tolerees"]
+        report["warnings"].append(
+            f"{csv_file.name} : colonnes attendues absentes {inspection['manquantes_tolerees']}"
+        )
 
     if df.empty:
         logger.warning(f"Fichier vide: {csv_file.name}")
