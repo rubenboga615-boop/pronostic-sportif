@@ -26,11 +26,11 @@ SEASONS = [
 ]
 
 
-class TelechargementEchoue(Exception):
+class DownloadFailedError(Exception):
     """Échec définitif du téléchargement d'un fichier."""
 
 
-class ErreurTransitoire(Exception):
+class TransientDownloadError(Exception):
     """Échec susceptible de réussir à la tentative suivante.
 
     Coupure réseau, délai dépassé, ou erreur 5xx du serveur. Une réponse 404,
@@ -40,7 +40,7 @@ class ErreurTransitoire(Exception):
 
 
 @retry(
-    retry=retry_if_exception_type(ErreurTransitoire),
+    retry=retry_if_exception_type(TransientDownloadError),
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=4, max=10),
     reraise=True,
@@ -57,15 +57,15 @@ async def _telecharger(url: str) -> bytes:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url, follow_redirects=True)
     except (httpx.TimeoutException, httpx.TransportError) as erreur:
-        raise ErreurTransitoire(f"{type(erreur).__name__}: {erreur}") from erreur
+        raise TransientDownloadError(f"{type(erreur).__name__}: {erreur}") from erreur
 
     if response.status_code >= 500:
-        raise ErreurTransitoire(f"HTTP {response.status_code}")
+        raise TransientDownloadError(f"HTTP {response.status_code}")
     if response.status_code >= 400:
-        raise TelechargementEchoue(f"HTTP {response.status_code}")
+        raise DownloadFailedError(f"HTTP {response.status_code}")
 
     if not response.content:
-        raise TelechargementEchoue("réponse vide")
+        raise DownloadFailedError("réponse vide")
 
     return response.content
 
@@ -98,10 +98,10 @@ async def download_league_season(
 
     try:
         contenu = await _telecharger(url)
-    except TelechargementEchoue as erreur:
+    except DownloadFailedError as erreur:
         logger.error(f"Téléchargement refusé pour {url} : {erreur}")
         return None
-    except ErreurTransitoire as erreur:
+    except TransientDownloadError as erreur:
         logger.error(f"Téléchargement abandonné après 3 tentatives pour {url} : {erreur}")
         return None
     except Exception as erreur:  # pragma: no cover — filet de sécurité

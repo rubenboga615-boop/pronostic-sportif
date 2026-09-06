@@ -13,8 +13,8 @@ import pytest
 
 from collectors.football_data import downloader
 from collectors.football_data.downloader import (
-    ErreurTransitoire,
-    TelechargementEchoue,
+    DownloadFailedError,
+    TransientDownloadError,
     _telecharger,
     download_league_season,
 )
@@ -79,7 +79,7 @@ class TestReessais:
         client = _ClientFactice([httpx.ConnectError("x")] * 5)
         monkeypatch.setattr(downloader.httpx, "AsyncClient", client)
 
-        with pytest.raises(ErreurTransitoire):
+        with pytest.raises(TransientDownloadError):
             await _telecharger("https://exemple/test.csv")
 
         assert client.appels == 3
@@ -89,7 +89,7 @@ class TestReessais:
         client = _ClientFactice([_reponse(404, b""), _reponse(200)])
         monkeypatch.setattr(downloader.httpx, "AsyncClient", client)
 
-        with pytest.raises(TelechargementEchoue):
+        with pytest.raises(DownloadFailedError):
             await _telecharger("https://exemple/test.csv")
 
         assert client.appels == 1
@@ -99,7 +99,7 @@ class TestReessais:
         client = _ClientFactice([_reponse(200, b"")])
         monkeypatch.setattr(downloader.httpx, "AsyncClient", client)
 
-        with pytest.raises(TelechargementEchoue):
+        with pytest.raises(DownloadFailedError):
             await _telecharger("https://exemple/test.csv")
 
 
