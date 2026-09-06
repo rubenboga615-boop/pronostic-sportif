@@ -16,9 +16,12 @@ import math
 from typing import Any
 
 from models.market_derivation import (
+    FIRST_HALF_LINES,
     derive_1n2,
     derive_btts,
     derive_double_chance,
+    derive_first_half_markets,
+    derive_most_productive_half,
     derive_over_under,
 )
 from models.poisson import compute_score_matrix, estimate_lambda
@@ -28,18 +31,50 @@ OVER_UNDER_LINES: tuple[float, ...] = (0.5, 1.5, 2.5, 3.5)
 
 # ── Contrat public des identifiants de marchés (Prediction / settlement) ──
 
-# Marchés publics du contrat (Phase 1, match entier).
-PUBLIC_MARKETS: frozenset[str] = frozenset({"1N2", "double_chance", "over_under", "BTTS"})
+# Marchés publics du contrat (Phase 1).
+#
+# Les marchés de mi-temps portent le suffixe « _1H ». Ils ne sont produits que
+# si des modèles de mi-temps sont fournis : sans scores de mi-temps, la
+# répartition des buts entre les deux périodes serait inventée.
+PUBLIC_MARKETS: frozenset[str] = frozenset(
+    {
+        "1N2",
+        "double_chance",
+        "over_under",
+        "BTTS",
+        "1N2_1H",
+        "double_chance_1H",
+        "over_under_1H",
+        "most_productive_half",
+    }
+)
+
+_SELECTIONS_1N2 = frozenset({"home", "draw", "away"})
+_SELECTIONS_DOUBLE_CHANCE = frozenset({"home_or_draw", "home_or_away", "draw_or_away"})
 
 # Sélections publiques par marché.
 PUBLIC_SELECTIONS: dict[str, frozenset[str]] = {
-    "1N2": frozenset({"home", "draw", "away"}),
-    "double_chance": frozenset({"home_or_draw", "home_or_away", "draw_or_away"}),
+    "1N2": _SELECTIONS_1N2,
+    "double_chance": _SELECTIONS_DOUBLE_CHANCE,
     "over_under": frozenset(
         {f"over_{line}" for line in OVER_UNDER_LINES}
         | {f"under_{line}" for line in OVER_UNDER_LINES}
     ),
     "BTTS": frozenset({"yes", "no"}),
+    "1N2_1H": _SELECTIONS_1N2,
+    "double_chance_1H": _SELECTIONS_DOUBLE_CHANCE,
+    "over_under_1H": frozenset(
+        {f"over_{line}" for line in FIRST_HALF_LINES}
+        | {f"under_{line}" for line in FIRST_HALF_LINES}
+    ),
+    "most_productive_half": frozenset({"first_half", "second_half", "equal"}),
+}
+
+# Marchés de mi-temps : nom interne -> nom public.
+MARKET_TO_PUBLIC_1H: dict[str, str] = {
+    "1n2": "1N2_1H",
+    "double_chance": "double_chance_1H",
+    "over_under": "over_under_1H",
 }
 
 # Mapping nom interne (market_derivation) -> contrat public.
@@ -159,6 +194,39 @@ def build_markets_from_matrix(score_matrix) -> list[dict[str, Any]]:
     markets.extend(derive_btts(score_matrix))
 
     return [normalize_prediction(p) for p in markets]
+
+
+def build_half_markets(first_half_matrix, second_half_matrix) -> list[dict[str, Any]]:
+    """Assembler les marchés de mi-temps (Phase 1).
+
+    Args:
+        first_half_matrix: matrice de scores de la première période.
+        second_half_matrix: matrice de scores de la seconde période.
+
+    Returns:
+        ``list[dict]`` de 15 prédictions : 1N2, double chance et Over/Under de
+        première mi-temps, plus la mi-temps la plus prolifique — aux
+        identifiants publics.
+    """
+    marches: list[dict[str, Any]] = []
+
+    for prediction in derive_first_half_markets(first_half_matrix):
+        publique = dict(prediction)
+        publique["market"] = MARKET_TO_PUBLIC_1H.get(prediction["market"], prediction["market"])
+        marches.append(_normaliser_selection(publique))
+
+    marches.extend(derive_most_productive_half(first_half_matrix, second_half_matrix))
+    return marches
+
+
+def _normaliser_selection(prediction: dict[str, Any]) -> dict[str, Any]:
+    """Appliquer le mapping de sélection sans toucher au marché déjà public."""
+    return {
+        "market": prediction["market"],
+        "selection": SELECTION_TO_PUBLIC.get(prediction["selection"], prediction["selection"]),
+        "probability": prediction["probability"],
+        "fair_odds": prediction["fair_odds"],
+    }
 
 
 def _neutral(value: Any, league_avg_goals: float) -> float:

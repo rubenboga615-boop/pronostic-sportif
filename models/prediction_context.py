@@ -11,6 +11,7 @@ from typing import Any
 
 from app.models import Feature, Match
 from models.market_assembly import (
+    build_half_markets,
     build_markets_from_matrix,
     build_match_markets,
     estimate_match_lambdas,
@@ -52,6 +53,7 @@ def build_match_predictions(
     target_match_id: int,
     home_advantage: float = DEFAULT_HOME_ADVANTAGE,
     model=None,
+    half_models=None,
 ) -> list[dict[str, Any]]:
     """Produire les 16 prédictions normalisées d'un match cible (sans écriture).
 
@@ -62,10 +64,15 @@ def build_match_predictions(
         model: modèle Dixon-Coles ajusté. S'il connaît les deux équipes, c'est
             lui qui produit la matrice de scores ; sinon le moteur de repli
             prend le relais, à partir des moyennes glissantes de buts.
+        half_models: paire de modèles de mi-temps. Fournie, elle ajoute les
+            marchés de première mi-temps et la mi-temps la plus prolifique.
+            Absente, ces marchés ne sont tout simplement pas produits : sans
+            scores de mi-temps, leur répartition serait inventée.
 
     Returns:
         La liste au format ``{"market", "selection", "probability",
-        "fair_odds"}`` avec les identifiants publics.
+        "fair_odds"}`` avec les identifiants publics. Seize prédictions de
+        match entier, plus quinze de mi-temps si ``half_models`` le permet.
     """
     target_match, home_features, away_features, league_avg_goals = _load_context(
         session, target_match_id
@@ -73,14 +80,24 @@ def build_match_predictions(
 
     if _modele_utilisable(model, target_match):
         matrice = model.score_matrix(target_match.home_team_id, target_match.away_team_id)
-        return build_markets_from_matrix(matrice)
+        predictions = build_markets_from_matrix(matrice)
+    else:
+        predictions = build_match_markets(
+            home_features,
+            away_features,
+            league_avg_goals,
+            home_advantage=home_advantage,
+        )
 
-    return build_match_markets(
-        home_features,
-        away_features,
-        league_avg_goals,
-        home_advantage=home_advantage,
-    )
+    if half_models is not None and half_models.connait(
+        target_match.home_team_id, target_match.away_team_id
+    ):
+        matrice_1h, matrice_2h = half_models.matrices(
+            target_match.home_team_id, target_match.away_team_id
+        )
+        predictions.extend(build_half_markets(matrice_1h, matrice_2h))
+
+    return predictions
 
 
 def _modele_utilisable(model, target_match: Match) -> bool:

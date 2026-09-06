@@ -114,11 +114,21 @@ def derive_btts(score_matrix: np.ndarray) -> list[dict]:
     ]
 
 
+# Lignes Over/Under de première mi-temps. Au-delà de 2,5 buts en une seule
+# période, le marché n'est plus proposé par les bookmakers.
+FIRST_HALF_LINES: tuple[float, ...] = (0.5, 1.5, 2.5)
+
+
 def derive_first_half_markets(first_half_matrix: np.ndarray) -> list[dict]:
-    """Dériver les marchés de première mi-temps."""
-    results = []
-    results.extend(derive_1n2(first_half_matrix))
-    for line in [0.5, 1.5, 2.5]:
+    """Dériver les marchés de première mi-temps : 1N2, double chance, O/U.
+
+    BTTS de première mi-temps est volontairement exclu : le cahier des charges
+    l'écarte de la première version.
+    """
+    probs_1n2 = derive_1n2(first_half_matrix)
+    results = list(probs_1n2)
+    results.extend(derive_double_chance(probs_1n2))
+    for line in FIRST_HALF_LINES:
         results.extend(derive_over_under(first_half_matrix, line))
     return results
 
@@ -127,25 +137,29 @@ def derive_most_productive_half(
     first_half_matrix: np.ndarray,
     second_half_matrix: np.ndarray,
 ) -> list[dict]:
-    """Déterminer la mi-temps la plus prolifique."""
-    # Probabilité que la 1ère MT ait plus de buts
-    prob_first = 0.0
-    prob_second = 0.0
-    prob_equal = 0.0
+    """Déterminer la mi-temps la plus prolifique.
 
-    for i in range(first_half_matrix.shape[0]):
-        for j in range(first_half_matrix.shape[1]):
-            for k in range(second_half_matrix.shape[0]):
-                for m in range(second_half_matrix.shape[1]):
-                    total_1h = i + j
-                    total_2h = k + m
-                    joint = first_half_matrix[i][j] * second_half_matrix[k][m]
-                    if total_1h > total_2h:
-                        prob_first += joint
-                    elif total_1h < total_2h:
-                        prob_second += joint
-                    else:
-                        prob_equal += joint
+    Seul le nombre total de buts de chaque période compte : on réduit d'abord
+    chaque matrice à la distribution de son total, puis on croise les deux.
+    La comparaison directe des deux matrices demandait quatre boucles
+    imbriquées — 6 561 itérations Python par match, soit plus de cent millions
+    sur un historique complet.
+
+    Les deux périodes sont supposées indépendantes conditionnellement aux
+    forces des équipes ; c'est l'hypothèse habituelle, et la seule que les
+    données disponibles permettent de soutenir.
+    """
+    totaux_1h = _distribution_du_total(first_half_matrix)
+    totaux_2h = _distribution_du_total(second_half_matrix)
+
+    # Produit extérieur : conjointe[a, b] = P(1re mi-temps = a et 2nde = b).
+    conjointe = np.outer(totaux_1h, totaux_2h)
+    indices_1h = np.arange(len(totaux_1h))[:, None]
+    indices_2h = np.arange(len(totaux_2h))[None, :]
+
+    prob_first = float(conjointe[indices_1h > indices_2h].sum())
+    prob_second = float(conjointe[indices_1h < indices_2h].sum())
+    prob_equal = float(conjointe[indices_1h == indices_2h].sum())
 
     return [
         {
@@ -167,6 +181,16 @@ def derive_most_productive_half(
             "fair_odds": fair_odds(prob_equal),
         },
     ]
+
+
+def _distribution_du_total(matrice: np.ndarray) -> np.ndarray:
+    """Probabilité de chaque total de buts, depuis une matrice de scores."""
+    lignes, colonnes = matrice.shape
+    totaux = np.zeros(lignes + colonnes - 1)
+    for i in range(lignes):
+        for j in range(colonnes):
+            totaux[i + j] += matrice[i][j]
+    return totaux
 
 
 def derive_asian_handicap(score_matrix: np.ndarray, handicap: float) -> list[dict]:

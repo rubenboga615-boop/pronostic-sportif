@@ -114,6 +114,7 @@ def generate_match_predictions(
     match_id: int,
     model_version: str = "poisson-v1",
     model=None,
+    half_models=None,
 ) -> list[Prediction]:
     """Générer et persister les prédictions d'un match (anti-fuite, idempotent).
 
@@ -121,7 +122,7 @@ def generate_match_predictions(
     idempotente (``persist_predictions``). Un second appel sur le même match met
     à jour les lignes existantes sans créer de doublon.
     """
-    predictions = build_match_predictions(session, match_id, model=model)
+    predictions = build_match_predictions(session, match_id, model=model, half_models=half_models)
     return persist_predictions(session, match_id, model_version, predictions)
 
 
@@ -130,6 +131,7 @@ def generate_predictions_for_matches(
     match_ids: Sequence[int],
     model_version: str = "poisson-v1",
     model=None,
+    half_models=None,
 ) -> dict[str, Any]:
     """Générer et persister les prédictions pour une liste explicite de matchs.
 
@@ -155,7 +157,9 @@ def generate_predictions_for_matches(
 
     for match_id in match_ids:
         try:
-            results = generate_match_predictions(session, match_id, model_version, model=model)
+            results = generate_match_predictions(
+                session, match_id, model_version, model=model, half_models=half_models
+            )
             succeeded.append(match_id)
             total_predictions += len(results)
         except Exception as exc:
@@ -259,6 +263,7 @@ def run_prediction_pipeline(
     *,
     reference_date,
     model=None,
+    half_models=None,
 ) -> dict[str, Any]:
     """Exécuter le pipeline de prédiction.
 
@@ -324,7 +329,9 @@ def run_prediction_pipeline(
 
         # Étape 2 : Génération des prédictions
         logger.info("Étape 2 : Génération des prédictions...")
-        report = generate_predictions_for_matches(session, match_ids, model_version, model=model)
+        report = generate_predictions_for_matches(
+            session, match_ids, model_version, model=model, half_models=half_models
+        )
 
         logger.info(
             f"  {report['predictions_created_or_updated']} prédictions "

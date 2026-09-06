@@ -25,11 +25,13 @@ from loguru import logger
 
 from app.database import SessionLocal
 from models.dixon_coles import fit_dixon_coles
+from models.first_half import fit_half_models
 from models.model_registry import ModelRegistry
 
 REQUETE = """
     SELECT id, competition_id, season_id, match_date,
-           home_team_id, away_team_id, home_goals, away_goals
+           home_team_id, away_team_id, home_goals, away_goals,
+           home_ht_goals, away_ht_goals
       FROM matches
      WHERE home_goals IS NOT NULL AND away_goals IS NOT NULL
      ORDER BY match_date, id
@@ -136,6 +138,33 @@ def entrainer(
                 metrics=metriques,
                 payload=modele.to_dict(),
             )
+
+        # Modèles de mi-temps : sans eux, les marchés de première période et la
+        # mi-temps la plus prolifique ne sont pas produits du tout — plutôt que
+        # d'être devinés depuis une répartition moyenne.
+        try:
+            mi_temps = fit_half_models(
+                groupe,
+                xi=xi,
+                reference_date=groupe["match_date"].max(),
+                competition_id=competition_id,
+            )
+        except ValueError as erreur:
+            logger.warning(f"Mi-temps non entraînées pour {competition_id} : {erreur}")
+        else:
+            metriques["mi_temps"] = {
+                "avantage_terrain_1re": mi_temps.premiere.home_advantage,
+                "avantage_terrain_2nde": mi_temps.seconde.home_advantage,
+                "n_train": mi_temps.premiere.n_matches,
+            }
+            if not dry_run:
+                registre.register(
+                    "dixon_coles_mi_temps",
+                    version_competition,
+                    metrics=metriques["mi_temps"],
+                    payload=mi_temps.to_dict(),
+                )
+
         resultats[competition_id] = metriques
 
     return resultats
