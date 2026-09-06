@@ -72,3 +72,41 @@ class TestMarketDerivation:
             results = market_derivation.derive_over_under(matrix, line)
             assert len(results) == 2
             assert results[0]["probability"] + results[1]["probability"] == pytest.approx(1.0)
+
+
+class TestNormalisationDeLaMatrice:
+    """La troncature à max_goals ne doit pas déséquilibrer les probabilités."""
+
+    @pytest.mark.parametrize(
+        ("lam_home", "lam_away", "max_goals"),
+        [(1.6, 1.2, 8), (3.0, 2.5, 8), (1.0, 0.8, 5), (0.4, 0.3, 3)],
+    )
+    def test_somme_exactement_un(self, lam_home, lam_away, max_goals):
+        matrix = compute_score_matrix(lam_home, lam_away, max_goals=max_goals)
+
+        assert matrix.sum() == pytest.approx(1.0, abs=1e-12)
+
+    def test_under_est_exactement_le_complement_de_over(self):
+        """Sans normalisation, `under` absorbait toute la masse tronquée."""
+        from models.market_derivation import derive_over_under
+
+        matrix = compute_score_matrix(3.0, 2.5, max_goals=8)
+        over, under = derive_over_under(matrix, 2.5)
+
+        somme_directe = float(
+            sum(
+                matrix[i][j]
+                for i in range(matrix.shape[0])
+                for j in range(matrix.shape[1])
+                if i + j <= 2.5
+            )
+        )
+        assert under["probability"] == pytest.approx(somme_directe, abs=1e-12)
+        assert over["probability"] + under["probability"] == pytest.approx(1.0, abs=1e-12)
+
+    def test_1n2_somme_a_un_sur_lambdas_eleves(self):
+        from models.market_derivation import derive_1n2
+
+        matrix = compute_score_matrix(3.0, 2.5, max_goals=8)
+
+        assert sum(p["probability"] for p in derive_1n2(matrix)) == pytest.approx(1.0, abs=1e-12)

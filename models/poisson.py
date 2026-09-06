@@ -30,11 +30,26 @@ def compute_score_matrix(
     lambda_away: float,
     max_goals: int = 8,
 ) -> np.ndarray:
-    """Calculer la matrice de probabilités de score (Poisson indépendant)."""
+    """Calculer la matrice de probabilités de score (Poisson indépendant).
+
+    La matrice est tronquée à ``max_goals`` buts par équipe, donc la masse des
+    scores plus élevés en est absente : sans renormalisation, les probabilités
+    ne somment pas à 1 et toute la masse manquante se retrouve attribuée aux
+    sélections calculées par complément (``under``, ``btts_no``). L'écart
+    atteint 5.10^-3 pour des lambdas élevés — assez pour fausser une cote
+    équitable sur les marchés serrés.
+
+    La matrice retournée somme donc exactement à 1, ce qui rend
+    ``1 - P(over)`` rigoureusement égal à ``P(under)``.
+    """
     matrix = np.zeros((max_goals + 1, max_goals + 1))
     for i in range(max_goals + 1):
         for j in range(max_goals + 1):
             matrix[i][j] = poisson_pmf(i, lambda_home) * poisson_pmf(j, lambda_away)
+
+    total = matrix.sum()
+    if total > 0:
+        matrix /= total
     return matrix
 
 

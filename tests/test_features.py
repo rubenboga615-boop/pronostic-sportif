@@ -63,3 +63,49 @@ class TestElo:
         elo = calculate_elo_ratings(sample_matches, team_ids)
         assert len(elo) == len(sample_matches)
         assert "home_elo" in elo.columns
+
+
+class TestMoyenneDeButsAvecScoresManquants:
+    """La moyenne de buts ne doit pas compter les matchs sans score comme des 0-0."""
+
+    @staticmethod
+    def _matchs(scores):
+        """Cinq matchs de l'équipe 1, dont certains sans score renseigné."""
+        return pd.DataFrame(
+            {
+                "id": list(range(1, 6)),
+                "competition_id": [1] * 5,
+                "season_id": [1] * 5,
+                "home_team_id": [1] * 5,
+                "away_team_id": [2] * 5,
+                "home_goals": [s[0] for s in scores],
+                "away_goals": [s[1] for s in scores],
+                "match_date": pd.to_datetime([f"2024-01-0{i}" for i in range(1, 6)]),
+            }
+        )
+
+    def test_un_seul_match_note_sur_cinq(self):
+        """Diviser par la fenêtre donnerait 0,4 au lieu de 2,0."""
+        df = self._matchs([(2, 0), (None, None), (None, None), (None, None), (None, None)])
+
+        features = calculate_form_features(df, 1, pd.Timestamp("2024-02-01"), windows=[5])
+
+        assert features["goals_for_avg_5"] == pytest.approx(2.0)
+        assert features["goals_against_avg_5"] == pytest.approx(0.0)
+
+    def test_tous_les_matchs_notes(self):
+        df = self._matchs([(2, 1), (0, 0), (3, 1), (1, 1), (1, 0)])
+
+        features = calculate_form_features(df, 1, pd.Timestamp("2024-02-01"), windows=[5])
+
+        assert features["goals_for_avg_5"] == pytest.approx(7 / 5)
+        assert features["goals_against_avg_5"] == pytest.approx(3 / 5)
+
+    def test_aucun_match_note(self):
+        """Sans aucun score, la moyenne n'existe pas et ne vaut pas zéro."""
+        df = self._matchs([(None, None)] * 5)
+
+        features = calculate_form_features(df, 1, pd.Timestamp("2024-02-01"), windows=[5])
+
+        assert features["goals_for_avg_5"] is None
+        assert features["goals_against_avg_5"] is None

@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
 )
@@ -28,6 +29,7 @@ class Competition(Base):
 
 class Season(Base):
     __tablename__ = "seasons"
+    __table_args__ = (Index("idx_seasons_lookup", "competition_id", "season_name"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     competition_id = Column(Integer, ForeignKey("competitions.id"), nullable=False)
@@ -39,6 +41,7 @@ class Season(Base):
 
 class Team(Base):
     __tablename__ = "teams"
+    __table_args__ = (Index("idx_teams_lookup", "provider", "canonical_name"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     canonical_name = Column(String, nullable=False)
@@ -50,6 +53,14 @@ class Team(Base):
 
 class Match(Base):
     __tablename__ = "matches"
+    __table_args__ = (
+        # Recherche de doublon par date et équipes (cf. _find_existing_match).
+        Index("idx_matches_dedup", "provider", "match_date", "home_team_id", "away_team_id"),
+        # Un identifiant fournisseur désigne un match et un seul.
+        Index("uq_matches_provider_match", "provider", "provider_match_id", unique=True),
+        # Sélection des matchs d'une compétition sur une période.
+        Index("idx_matches_competition_date", "competition_id", "match_date"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     provider = Column(String)
@@ -74,6 +85,7 @@ class Match(Base):
 
 class TeamMatchStats(Base):
     __tablename__ = "team_match_stats"
+    __table_args__ = (Index("idx_tms_match_team", "match_id", "team_id"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
@@ -125,6 +137,7 @@ class Availability(Base):
 
 class OddsSnapshot(Base):
     __tablename__ = "odds_snapshots"
+    __table_args__ = (Index("idx_odds_match_id", "match_id"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
@@ -139,6 +152,11 @@ class OddsSnapshot(Base):
 
 class Feature(Base):
     __tablename__ = "features"
+    __table_args__ = (
+        # Une seule ligne de features par match et par équipe. L'idempotence du
+        # pipeline reposait jusqu'ici sur un SELECT applicatif, sans filet.
+        Index("uq_features_match_team", "match_id", "team_id", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
@@ -167,6 +185,21 @@ class Feature(Base):
 
 class Prediction(Base):
     __tablename__ = "predictions"
+    __table_args__ = (
+        # Clé logique de la prédiction : un match, une version de modèle, un
+        # marché, une sélection. Deux exécutions doivent mettre à jour la même
+        # ligne, jamais en créer une seconde.
+        Index(
+            "uq_predictions_logique",
+            "match_id",
+            "model_version",
+            "market",
+            "selection",
+            unique=True,
+        ),
+        # Consultation des prédictions d'un match.
+        Index("idx_predictions_match", "match_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
@@ -185,6 +218,10 @@ class Prediction(Base):
 
 class ActualResult(Base):
     __tablename__ = "actual_results"
+    __table_args__ = (
+        # Un résultat réglé par match, marché et sélection.
+        Index("uq_actual_results_logique", "match_id", "market", "selection", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)

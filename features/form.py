@@ -42,6 +42,7 @@ def calculate_form_features(
         wins = draws = losses = 0
         gf = ga = 0
         clean_sheets = 0
+        notes = 0  # matchs effectivement pourvus d'un score
 
         for _, match in recent.iterrows():
             is_home = match["home_team_id"] == team_id
@@ -52,6 +53,7 @@ def calculate_form_features(
                 continue
 
             mgf, mga = int(mgf), int(mga)
+            notes += 1
             gf += mgf
             ga += mga
 
@@ -67,13 +69,20 @@ def calculate_form_features(
             if mga == 0:
                 clean_sheets += 1
 
-        n = max(len(recent), 1)
         features[f"form_points_{window}"] = points
         features[f"form_wins_{window}"] = wins
         features[f"form_draws_{window}"] = draws
         features[f"form_losses_{window}"] = losses
-        features[f"goals_for_avg_{window}"] = gf / n
-        features[f"goals_against_avg_{window}"] = ga / n
         features[f"clean_sheets_{window}"] = clean_sheets
+        # Diviser par la taille de la fenêtre compterait les matchs sans score
+        # comme des 0-0 : une équipe dont un seul match sur cinq est renseigné
+        # verrait sa moyenne divisée par cinq. Sans aucun match noté, la
+        # moyenne n'existe pas et reste None.
+        if notes:
+            features[f"goals_for_avg_{window}"] = gf / notes
+            features[f"goals_against_avg_{window}"] = ga / notes
+        else:
+            features[f"goals_for_avg_{window}"] = None
+            features[f"goals_against_avg_{window}"] = None
 
     return features
