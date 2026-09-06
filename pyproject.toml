@@ -45,6 +45,12 @@ scraping = [
     "aiohttp>=3.10.0",
 ]
 
+[tool.setuptools.packages.find]
+# Découverte explicite : la racine contient des répertoires qui ne sont pas des
+# paquets installables (dashboard, migrations, scripts, tests, data), et
+# setuptools refuse de trancher seul en disposition « à plat ».
+include = ["app*", "collectors*", "evaluation*", "features*", "models*", "pipelines*"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
