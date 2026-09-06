@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import settings
 
@@ -26,7 +26,50 @@ SEASONS = [
 ]
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+class TelechargementEchoue(Exception):
+    """Échec définitif du téléchargement d'un fichier."""
+
+
+class ErreurTransitoire(Exception):
+    """Échec susceptible de réussir à la tentative suivante.
+
+    Coupure réseau, délai dépassé, ou erreur 5xx du serveur. Une réponse 404,
+    à l'inverse, est définitive : la saison n'est pas publiée, réessayer ne la
+    fera pas apparaître.
+    """
+
+
+@retry(
+    retry=retry_if_exception_type(ErreurTransitoire),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    reraise=True,
+)
+async def _telecharger(url: str) -> bytes:
+    """Récupérer le contenu d'un fichier, avec réessais sur erreur transitoire.
+
+    Cette fonction laisse remonter ses exceptions : c'est ce qui permet à
+    ``tenacity`` de réessayer. Enfermer la requête dans un ``try/except`` qui
+    retourne ``None`` — comme le faisait la version précédente — rendait le
+    décorateur inopérant, puisqu'aucune exception ne lui parvenait jamais.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, follow_redirects=True)
+    except (httpx.TimeoutException, httpx.TransportError) as erreur:
+        raise ErreurTransitoire(f"{type(erreur).__name__}: {erreur}") from erreur
+
+    if response.status_code >= 500:
+        raise ErreurTransitoire(f"HTTP {response.status_code}")
+    if response.status_code >= 400:
+        raise TelechargementEchoue(f"HTTP {response.status_code}")
+
+    if not response.content:
+        raise TelechargementEchoue("réponse vide")
+
+    return response.content
+
+
 async def download_league_season(
     league_code: str,
     season: str,
@@ -41,7 +84,7 @@ async def download_league_season(
         force: Si True, re-télécharger même si le fichier existe
 
     Returns:
-        Chemin du fichier téléchargé ou None en cas d'erreur
+        Chemin du fichier téléchargé, ou None après échec définitif.
 
     """
     url = f"{BASE_URL}/mmz4281/{season}/{league_code}.csv"
@@ -53,19 +96,26 @@ async def download_league_season(
         logger.info(f"Fichier déjà existant : {output_file}")
         return output_file
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(url, follow_redirects=True)
-            response.raise_for_status()
-            output_file.write_bytes(response.content)
-            logger.info(f"Downloaded : {url} -> {output_file}")
-            return output_file
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Erreur HTTP {e.response.status_code} pour {url}")
-            return None
-        except Exception as e:
-            logger.error(f"Erreur téléchargement {url}: {e}")
-            return None
+    try:
+        contenu = await _telecharger(url)
+    except TelechargementEchoue as erreur:
+        logger.error(f"Téléchargement refusé pour {url} : {erreur}")
+        return None
+    except ErreurTransitoire as erreur:
+        logger.error(f"Téléchargement abandonné après 3 tentatives pour {url} : {erreur}")
+        return None
+    except Exception as erreur:  # pragma: no cover — filet de sécurité
+        logger.error(f"Erreur inattendue sur {url} : {erreur}")
+        return None
+
+    # Écriture atomique : un fichier partiel serait ensuite parsé comme s'il
+    # était complet, et l'import y verrait simplement moins de matchs.
+    temporaire = output_file.with_suffix(".csv.partiel")
+    temporaire.write_bytes(contenu)
+    temporaire.replace(output_file)
+
+    logger.info(f"Téléchargé : {url} -> {output_file} ({len(contenu)} octets)")
+    return output_file
 
 
 async def download_all(
@@ -90,6 +140,7 @@ async def download_all(
         seasons = SEASONS
 
     downloaded: list[Path] = []
+    echecs: list[str] = []
     for league_code in league_codes:
         if league_code not in LEAGUE_CONFIG:
             logger.warning(f"Ligue inconnue : {league_code}")
@@ -98,5 +149,10 @@ async def download_all(
             result = await download_league_season(league_code, season, force=force)
             if result:
                 downloaded.append(result)
+            else:
+                echecs.append(f"{league_code}_{season}")
+
     logger.info(f"Total téléchargé : {len(downloaded)} fichiers")
+    if echecs:
+        logger.warning(f"{len(echecs)} fichiers indisponibles : {echecs}")
     return downloaded
