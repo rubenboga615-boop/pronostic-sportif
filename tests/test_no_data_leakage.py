@@ -220,7 +220,6 @@ class TestMouchardDeDates:
 
         for nom in (
             "calculate_form_features",
-            "calculate_standings",
             "calculate_rest_features",
             "calculate_shots_features",
             "calculate_home_away_features",

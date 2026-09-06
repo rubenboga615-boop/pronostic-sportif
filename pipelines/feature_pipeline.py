@@ -7,6 +7,7 @@ from loguru import logger
 
 from app.database import SessionLocal
 from app.models import Feature
+from features.context import FeatureContext, build_context
 from features.elo import DEFAULT_ELO, regress_towards_mean, update_elo
 from features.form import calculate_form_features
 from features.home_away import calculate_home_away_features
@@ -14,7 +15,7 @@ from features.mapping import map_features_to_columns
 from features.odds_movement import calculate_odds_movement
 from features.rest_days import calculate_rest_features
 from features.shots import calculate_shots_features
-from features.standings import calculate_standings, get_team_position
+from features.standings import get_team_position
 
 
 def run_feature_pipeline() -> dict[str, int]:
@@ -45,13 +46,25 @@ def run_feature_pipeline() -> dict[str, int]:
         )
         matches_df["match_date"] = pd.to_datetime(matches_df["match_date"])
 
+        # Les cotes sont indexées par match : les filtrer à chaque appel
+        # reviendrait à parcourir toute la table pour chaque match.
+        cotes_par_match = dict(tuple(odds_df.groupby("match_id"))) if not odds_df.empty else {}
+        cotes_vides = odds_df.iloc[0:0]
+
         processed = 0
-        for _, match in matches_df.iterrows():
-            # Anti-fuite : uniquement l'historique strictement antérieur.
-            prior = matches_df[matches_df["match_date"] < match["match_date"]]
-            cols = compute_match_features(match, prior, odds_df)
-            persist_match_features(session, match, cols["home"], cols["away"])
-            processed += 1
+        contexte = FeatureContext()
+        # Les matchs sont traités par journée : tous ceux d'une même date sont
+        # d'abord observés, puis seulement intégrés au contexte. Deux matchs du
+        # même jour ne s'informent donc jamais l'un l'autre — c'est exactement
+        # la règle « strictement antérieur » appliquée jusqu'ici.
+        for _, journee in matches_df.groupby("match_date", sort=True):
+            for _, match in journee.iterrows():
+                cotes = cotes_par_match.get(int(match["id"]), cotes_vides)
+                cols = compute_match_features(match, None, cotes, context=contexte)
+                persist_match_features(session, match, cols["home"], cols["away"])
+                processed += 1
+            for _, match in journee.iterrows():
+                contexte.absorb(match)
 
         session.commit()
         logger.info(f"=== Pipeline terminé : {processed} matchs traités ===")
@@ -65,14 +78,20 @@ def run_feature_pipeline() -> dict[str, int]:
 
 def compute_match_features(
     match: pd.Series,
-    prior_matches_df: pd.DataFrame,
+    prior_matches_df: pd.DataFrame | None,
     odds_df: pd.DataFrame,
+    context: FeatureContext | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Calculer en mémoire les features d'un match pour les deux équipes.
 
     Retourne deux dictionnaires alignés sur les colonnes du modèle ``Feature`` :
     ``{"home": {...}, "away": {...}}``, via ``map_features_to_columns`` avec un
     ``side`` explicite. Aucune écriture en base, aucun ``session``.
+
+    ``context`` évite de reconstruire l'historique à chaque appel : le pipeline
+    en fait avancer un seul, ce qui rend le coût par match indépendant de la
+    taille de la base. Sans contexte, ``prior_matches_df`` est indexé sur place
+    et le résultat est identique.
 
     Règles validées :
     - anti-fuite : seuls les matchs antérieurs à ``match_date`` sont utilisés ;
@@ -91,20 +110,28 @@ def compute_match_features(
     if pd.isna(season_id):
         season_id = None
 
-    # Anti-fuite : uniquement les matchs strictement antérieurs à la cible.
-    prior = prior_matches_df[prior_matches_df["match_date"] < match_date]
+    # Anti-fuite : le contexte ne contient que des matchs strictement
+    # antérieurs à la cible. Fourni par le pipeline, il est avancé une fois
+    # pour toutes ; sinon il est construit ici depuis l'historique reçu.
+    if context is None:
+        context = build_context(prior_matches_df, match_date)
 
-    # Grandeurs partagées, calculées une seule fois.
-    rest = calculate_rest_features(prior, home_id, away_id, match_date, season_id=season_id)
-    standings = calculate_standings(
-        prior, match_date, competition_id=competition_id, season_id=season_id
+    # Grandeurs partagées, lues une seule fois dans le contexte.
+    rest = calculate_rest_features(
+        context.historique_equipes(home_id, away_id),
+        home_id,
+        away_id,
+        match_date,
+        season_id=season_id,
     )
-    elo_home = _compute_elo_before(prior, home_id, season_id=season_id)
-    elo_away = _compute_elo_before(prior, away_id, season_id=season_id)
+    standings = context.classement(competition_id, season_id)
+    elo_home = context.elo(home_id, season_id)
+    elo_away = context.elo(away_id, season_id)
 
     result: dict[str, dict[str, Any]] = {}
 
     for side, team_id in (("home", home_id), ("away", away_id)):
+        historique = context.historique_equipe(team_id)
         # Sélection de cote selon le côté : home -> "home", away -> "away".
         # Date de coupure = coup d'envoi : aucune cote postérieure, et aucune
         # cote de clôture, ne peut entrer dans les features.
@@ -121,15 +148,15 @@ def compute_match_features(
             "home_elo": elo_home,
             "away_elo": elo_away,
             # par équipe.
-            **calculate_form_features(prior, team_id, match_date, windows=[5, 10]),
+            **calculate_form_features(historique, team_id, match_date, windows=[5, 10]),
             # NB : calculate_goals_features est volontairement écarté : ses
             # moyennes (fenêtre 10) écraseraient goals_for_avg_5/goals_against_avg_5
             # produites par calculate_form_features (fenêtre 5).
             # calculate_home_away_features : ses sorties (home/away_goals_for/against_avg)
             # sont actuellement calculées mais NON persistées (clés dans UNMAPPED_KEYS,
             # sans colonne Feature dédiée). Conservé tel quel par décision.
-            **calculate_home_away_features(prior, team_id, match_date, window=10),
-            **calculate_shots_features(prior, team_id, match_date, window=5),
+            **calculate_home_away_features(historique, team_id, match_date, window=10),
+            **calculate_shots_features(historique, team_id, match_date, window=5),
             "league_position": get_team_position(standings, team_id),
             "goal_difference": _goal_difference(standings, team_id),
         }
@@ -142,6 +169,10 @@ def _compute_elo_before(
     prior_df: pd.DataFrame, team_id: int, season_id: int | None = None
 ) -> float:
     """Elo pré-match d'une équipe, calculé sur les seuls matchs antérieurs.
+
+    Implémentation de référence, conservée comme étalon : elle rejoue tout
+    l'historique, là où ``FeatureContext`` maintient le rating de façon
+    incrémentale. Un test d'équivalence compare les deux sur un jeu complet.
 
     Rejoue la boucle Elo chronologiquement ; les matchs sans buts renseignés sont
     ignorés. Le rating est conservé d'une saison à l'autre mais ramené vers la
@@ -156,7 +187,12 @@ def _compute_elo_before(
     ratings.setdefault(team_id, DEFAULT_ELO)
     last_season: dict[int, object] = {}
 
-    for _, m in prior_df.sort_values("match_date").iterrows():
+    # Tri stable et complet : `sort_values` sur la seule date laisse l'ordre des
+    # matchs d'une même journée à la merci de l'algorithme de tri, alors que
+    # l'Elo dépend de cet ordre. Le pipeline lit les matchs par (date, id) ;
+    # l'étalon doit rejouer exactement la même séquence.
+    ordre = ["match_date", "id"] if "id" in prior_df.columns else ["match_date"]
+    for _, m in prior_df.sort_values(ordre, kind="stable").iterrows():
         hg = m.get("home_goals")
         ag = m.get("away_goals")
         if pd.isna(hg) or pd.isna(ag):

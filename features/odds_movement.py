@@ -99,21 +99,27 @@ def _usable_snapshots(
         (odds_data["match_id"] == match_id)
         & (odds_data["market"] == market)
         & (odds_data["selection"] == selection)
-    ].copy()
+    ]
     if rows.empty:
         return rows
 
     # Un relevé de clôture n'est jamais disponible avant le match.
     if "is_closing" in rows.columns:
         rows = rows[~rows["is_closing"].astype(bool)]
+        if rows.empty:
+            return rows
 
     # Un instant de capture inconnu ne peut pas être supposé antérieur.
     if "captured_at" not in rows.columns:
         return rows.iloc[0:0]
-    rows["captured_at"] = pd.to_datetime(rows["captured_at"], errors="coerce")
-    rows = rows[rows["captured_at"].notna() & (rows["captured_at"] < pd.Timestamp(cutoff))]
-
-    return rows[rows["odds"].notna() & (rows["odds"] > 0)]
+    captured = pd.to_datetime(rows["captured_at"], errors="coerce")
+    garde = (
+        captured.notna()
+        & (captured < pd.Timestamp(cutoff))
+        & rows["odds"].notna()
+        & (rows["odds"] > 0)
+    )
+    return rows.loc[garde].assign(captured_at=captured[garde])
 
 
 def _busiest_bookmaker(usable: pd.DataFrame) -> str:

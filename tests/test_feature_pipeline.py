@@ -12,6 +12,7 @@ def _prior_df() -> pd.DataFrame:
         {
             "id": [1, 2, 3, 4, 5],
             "competition_id": [1, 1, 1, 1, 1],
+            "season_id": [1, 1, 1, 1, 1],
             "match_date": pd.to_datetime(
                 [
                     "2024-01-10",
