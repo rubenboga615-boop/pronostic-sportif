@@ -106,6 +106,75 @@ class TestRegistre:
         con.close()
 
 
+class TestMarquageSansExecution:
+    """Adopter le registre sur une base déjà modifiée à la main.
+
+    Le cas s'est présenté le 07/09/2026 : quatre migrations avaient été
+    appliquées avant que ce lanceur n'existe, le registre les ignorait, et
+    `ALTER TABLE ADD COLUMN` échouait en les rejouant — bloquant du même coup
+    les deux migrations réellement en attente.
+    """
+
+    def test_la_migration_marquee_n_est_plus_a_appliquer(self, base, migrations):
+        con = sqlite3.connect(base)
+        lanceur.marquer_appliquees(["20260101_une.sql"], con)
+
+        assert "20260101_une.sql" in lanceur.deja_appliquees(con)
+        con.close()
+
+    def test_le_marquage_n_execute_pas_le_sql(self, base, migrations):
+        """Toute la raison d'être de l'option : le schéma ne bouge pas."""
+        con = sqlite3.connect(base)
+        avant = {c[1] for c in con.execute("PRAGMA table_info(features)")}
+
+        lanceur.marquer_appliquees(["20260101_une.sql"], con)
+
+        apres = {c[1] for c in con.execute("PRAGMA table_info(features)")}
+        assert apres == avant
+        assert "une" not in apres
+        con.close()
+
+    def test_les_donnees_sont_intactes(self, base, migrations):
+        con = sqlite3.connect(base)
+        lanceur.marquer_appliquees(["20260101_une.sql", "20260102_deux.sql"], con)
+
+        assert con.execute("SELECT valeur FROM features").fetchone() == (1.5,)
+        con.close()
+
+    def test_un_nom_inconnu_est_refuse(self, base, migrations):
+        con = sqlite3.connect(base)
+        with pytest.raises(SystemExit):
+            lanceur.marquer_appliquees(["20261231_inventee.sql"], con)
+        con.close()
+
+    def test_un_nom_inconnu_est_refuse_avant_toute_ecriture(self, base, migrations):
+        """La validation précède la sauvegarde : pas de copie inutile."""
+        with pytest.raises(SystemExit):
+            lanceur.valider_noms(["20260101_une.sql", "20261231_inventee.sql"])
+
+    def test_le_marquage_est_rejouable(self, base, migrations):
+        """Relancer la même commande ne doit pas échouer sur la clé primaire."""
+        con = sqlite3.connect(base)
+        lanceur.marquer_appliquees(["20260101_une.sql"], con)
+        lanceur.marquer_appliquees(["20260101_une.sql"], con)
+
+        lignes = con.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE nom = ?", ("20260101_une.sql",)
+        ).fetchone()[0]
+        assert lignes == 1
+        con.close()
+
+    def test_marquer_ne_dispense_pas_les_autres(self, base, migrations):
+        """Une migration marquée est écartée ; les autres restent à appliquer."""
+        con = sqlite3.connect(base)
+        lanceur.marquer_appliquees(["20260101_une.sql"], con)
+        passees = lanceur.deja_appliquees(con)
+
+        restantes = [f.name for f in lanceur.migrations_disponibles() if f.name not in passees]
+        assert restantes == ["20260102_deux.sql"]
+        con.close()
+
+
 class TestApplication:
     def test_les_colonnes_sont_bien_ajoutees(self, base, migrations):
         con = sqlite3.connect(base)

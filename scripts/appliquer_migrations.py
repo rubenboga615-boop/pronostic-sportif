@@ -15,6 +15,12 @@ Usage :
     python scripts/appliquer_migrations.py --etat        # que reste-t-il ?
     python scripts/appliquer_migrations.py --simuler     # sans rien écrire
     python scripts/appliquer_migrations.py               # applique
+    python scripts/appliquer_migrations.py --marquer-appliquee FICHIER
+
+La dernière forme sert le cas d'une base modifiée à la main avant que ce
+lanceur n'existe : elle inscrit une migration au registre **sans l'exécuter**.
+Sans elle, une migration non idempotente — `ALTER TABLE ADD COLUMN` — est
+rejouée, échoue, et bloque toutes les suivantes.
 
 La sauvegarde est prise automatiquement, vérifiée, et son chemin affiché avant
 toute écriture.
@@ -90,6 +96,41 @@ def sauvegarder_et_verifier(base: Path) -> Path:
     return copie
 
 
+def valider_noms(noms: list[str]) -> None:
+    """Refuser un nom qui ne désigne aucune migration du dépôt.
+
+    Vérifié avant la sauvegarde : une faute de frappe ne doit pas laisser
+    derrière elle une copie de la base dont personne n'aura l'usage.
+    """
+    connus = {fichier.name for fichier in migrations_disponibles()}
+    inconnus = sorted(set(noms) - connus)
+    if inconnus:
+        raise SystemExit(
+            f"Migration(s) inconnue(s) : {', '.join(inconnus)}\n"
+            f"Attendu parmi : {', '.join(sorted(connus))}"
+        )
+
+
+def marquer_appliquees(noms: list[str], con: sqlite3.Connection) -> list[str]:
+    """Inscrire au registre des migrations dont l'effet est déjà en base.
+
+    Ne touche qu'au registre : aucune donnée, aucun schéma, aucun fichier SQL
+    exécuté. Le script ne peut pas deviner ce que chaque migration était censée
+    produire — vérifier que l'effet est réellement présent reste à la charge de
+    l'opérateur, avant d'appeler cette fonction.
+    """
+    valider_noms(noms)
+    con.execute(TABLE_REGISTRE)
+    horodatage = datetime.now(UTC).isoformat()
+    for nom in sorted(set(noms)):
+        con.execute(
+            "INSERT OR REPLACE INTO schema_migrations (nom, applique_a) VALUES (?, ?)",
+            (nom, horodatage),
+        )
+    con.commit()
+    return sorted(set(noms))
+
+
 def appliquer(fichier: Path, con: sqlite3.Connection) -> None:
     """Exécuter une migration et l'inscrire au registre, atomiquement.
 
@@ -113,6 +154,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--etat", action="store_true", help="Lister sans rien appliquer")
     parser.add_argument("--simuler", action="store_true", help="Tout vérifier, ne rien écrire")
+    parser.add_argument(
+        "--marquer-appliquee",
+        action="append",
+        default=[],
+        dest="marquer",
+        metavar="FICHIER",
+        help="Inscrire une migration au registre sans l'exécuter (effet déjà en base). Répétable.",
+    )
     args = parser.parse_args()
 
     base = chemin_base()
@@ -128,6 +177,21 @@ def main() -> None:
     for fichier in toutes:
         marque = "✓ appliquée" if fichier.name in passees else "· à appliquer"
         logger.info(f"  {marque}  {fichier.name}")
+
+    if args.marquer:
+        valider_noms(args.marquer)
+        con.close()
+        copie = sauvegarder_et_verifier(base)
+        con = sqlite3.connect(base)
+        try:
+            inscrites = marquer_appliquees(args.marquer, con)
+        finally:
+            con.close()
+        for nom in inscrites:
+            logger.info(f"Inscrite au registre SANS exécution : {nom}")
+        logger.info(f"Pour revenir en arrière : cp {copie} {base}")
+        logger.info("Relancez avec --etat pour vérifier ce qu'il reste.")
+        return
 
     if not restantes:
         logger.info("Rien à faire : toutes les migrations sont passées.")
