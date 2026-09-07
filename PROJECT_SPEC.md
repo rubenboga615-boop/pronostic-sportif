@@ -88,6 +88,21 @@ Pour le modèle initial, utilise un modèle de Poisson, puis teste Dixon-Coles p
 
 ## Sources de données
 
+### Sources écartées, et pourquoi
+
+À ne pas rouvrir sans raison nouvelle :
+
+- **football-data.org** (`api.football-data.org`) — service distinct de
+  Football-Data.**co.uk**, malgré la quasi-homonymie. C'est une vraie API REST,
+  mais **elle ne fournit pas les cotes des bookmakers**. Or l'edge,
+  `offered_odds`, le rendement simulé et toute la comparaison au marché en
+  dépendent : y basculer viderait le projet de sa mesure de valeur. Écartée en
+  septembre 2026.
+
+Football-Data.co.uk n'a pas d'API et n'en a pas besoin : ses fichiers sont à
+une adresse stable et prévisible, `mmz4281/{saison}/{code}.csv`, que le
+téléchargeur construit déjà.
+
 ### Football-Data.co.uk
 
 Source historique principale :
