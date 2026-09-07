@@ -9,21 +9,23 @@ description = "Moteur probabiliste de pronostic football"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
+# Noyau : tout ce qu'il faut pour importer, calculer les features, entraîner,
+# prédire, régler et évaluer. Rien de plus.
+#
+# L'API, le tableau de bord et l'apprentissage automatique sont des extras.
+# Les y laisser obligeait à installer FastAPI, Streamlit et scikit-learn pour
+# lancer un simple import de CSV — un obstacle réel sur les plateformes sans
+# roue précompilée, où chacune de ces bibliothèques doit être compilée.
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0",
-    "pydantic>=2.9.0",
-    "pydantic-settings>=2.5.0",
     "pandas>=2.2.0",
     "numpy>=1.26.0",
     "scipy>=1.14.0",
-    "scikit-learn>=1.5.0",
-    "statsmodels>=0.14.0",
     "sqlalchemy>=2.0.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
     "tenacity>=9.0.0",
-    "streamlit>=1.38.0",
-    "python-dotenv>=1.0.0",
     "loguru>=0.7.0",
 ]
 
@@ -35,9 +37,21 @@ dev = [
     "ruff>=0.6.0",
     "mypy>=1.11.0",
 ]
+# Calibration des probabilités (Platt, isotonique) et modèles d'apprentissage
+# automatique de la Phase 1. scikit-learn n'est importé qu'au moment de
+# calibrer : le reste du projet fonctionne sans.
 ml = [
+    "scikit-learn>=1.5.0",
+    "statsmodels>=0.14.0",
     "xgboost>=2.1.0",
     "lightgbm>=4.4.0",
+]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+dashboard = [
+    "streamlit>=1.38.0",
 ]
 scraping = [
     "beautifulsoup4>=4.12.0",

@@ -116,9 +116,20 @@ def ajuster_calibrateur(y_true, y_prob, methode: str = "platt") -> Calibrateur:
     return Calibrateur(methode=methode, parametres=parametres, n_ajustement=int(len(y)))
 
 
+MESSAGE_SANS_SKLEARN = (
+    "La calibration demande scikit-learn, qui n'est pas installé.\n"
+    '  pip install -e ".[ml]"\n'
+    "Le reste du projet — import, features, entraînement, prédiction, "
+    "règlement, backtest — fonctionne sans."
+)
+
+
 def _ajuster_platt(y: np.ndarray, p: np.ndarray) -> dict[str, float]:
     """Régression logistique à une variable sur le logit des probabilités."""
-    from sklearn.linear_model import LogisticRegression
+    try:
+        from sklearn.linear_model import LogisticRegression
+    except ImportError as erreur:  # pragma: no cover — dépend de l'installation
+        raise ImportError(MESSAGE_SANS_SKLEARN) from erreur
 
     modele = LogisticRegression(C=1e6, solver="lbfgs")
     modele.fit(_logit(p).reshape(-1, 1), y)
@@ -132,7 +143,10 @@ def _ajuster_isotonique(y: np.ndarray, p: np.ndarray) -> dict[str, list[float]]:
     sérialisables en JSON, donc enregistrables dans le registre des modèles et
     rejouables des années plus tard.
     """
-    from sklearn.isotonic import IsotonicRegression
+    try:
+        from sklearn.isotonic import IsotonicRegression
+    except ImportError as erreur:  # pragma: no cover — dépend de l'installation
+        raise ImportError(MESSAGE_SANS_SKLEARN) from erreur
 
     modele = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
     modele.fit(p, y)

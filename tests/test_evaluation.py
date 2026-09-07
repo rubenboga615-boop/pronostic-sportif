@@ -491,3 +491,66 @@ class TestCalibration:
         brutes = [0.2, 0.5, 0.8]
 
         np.testing.assert_allclose(calibrate_probabilities(brutes), brutes)
+
+
+class TestDependancesOptionnelles:
+    """Le noyau doit tourner sans les extras.
+
+    scikit-learn, FastAPI et Streamlit doivent être compilés depuis les
+    sources sur les plateformes sans roue précompilée — Termux sur Android,
+    par exemple. Les exiger pour lancer un simple import de CSV était un
+    obstacle inutile.
+    """
+
+    MODULES_DU_NOYAU = (
+        "pipelines.historical_import",
+        "pipelines.feature_pipeline",
+        "pipelines.prediction_pipeline",
+        "models.dixon_coles",
+        "models.first_half",
+        "models.market_assembly",
+        "evaluation.settlement",
+        "evaluation.pricing",
+        "evaluation.backtest",
+        "evaluation.metrics",
+    )
+
+    EXTRAS = {"sklearn", "streamlit", "fastapi", "uvicorn", "statsmodels"}
+
+    @pytest.fixture
+    def sans_extras(self, monkeypatch):
+        """Rendre les extras introuvables, le temps du test."""
+        import builtins
+
+        importer_reel = builtins.__import__
+
+        def importer(nom, *args, **kwargs):
+            if nom.split(".")[0] in self.EXTRAS:
+                raise ImportError(f"{nom} indisponible (simulation)")
+            return importer_reel(nom, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", importer)
+
+    def test_le_noyau_s_importe_sans_les_extras(self, sans_extras):
+        import importlib
+        import sys
+
+        for module in self.MODULES_DU_NOYAU:
+            sys.modules.pop(module, None)
+            importlib.import_module(module)
+
+    def test_la_calibration_explique_ce_qui_manque(self, sans_extras):
+        """Un ImportError nu n'aiderait personne à comprendre quoi installer."""
+        with pytest.raises(ImportError, match=r'pip install -e ".\[ml\]"'):
+            ajuster_calibrateur([0, 1, 0, 1], [0.2, 0.8, 0.3, 0.7], "platt")
+
+    def test_les_dependances_du_noyau_sont_pures_ou_courantes(self):
+        """Le noyau déclaré ne doit contenir aucun extra."""
+        import tomllib
+        from pathlib import Path
+
+        pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+        noyau = {d.split(">")[0].split("[")[0] for d in pyproject["project"]["dependencies"]}
+
+        assert not (noyau & {"scikit-learn", "statsmodels", "streamlit", "fastapi", "uvicorn"})
+        assert {"pandas", "numpy", "scipy", "sqlalchemy", "loguru"} <= noyau
