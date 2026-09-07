@@ -152,7 +152,7 @@ class TestInsertionEnBase:
         """Football-Data ne publie pas l'instant du relevé d'ouverture.
 
         Le prétendre connu ferait passer une cote non datée pour une cote
-        pré-match exploitable. La colonne porte un `default=utcnow` qu'il faut
+        pré-match exploitable. La colonne porte un `default=maintenant_utc` qu'il faut
         neutraliser explicitement.
         """
         self._importer(contexte, fichier_csv)

@@ -1,6 +1,6 @@
 """Modèles ORM de la base de données."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -16,6 +16,18 @@ from sqlalchemy import (
 from app.database import Base
 
 
+def maintenant_utc() -> datetime:
+    """Horodatage UTC par défaut des colonnes techniques.
+
+    `datetime.utcnow()` est déprécié : il renvoie un datetime naïf qui prétend
+    être local alors qu'il est UTC, un piège classique. La base stocke des
+    datetimes naïfs, et les lignes déjà écrites le sont ; on retire donc le
+    fuseau après coup plutôt que de mélanger, dans une même colonne, des
+    valeurs naïves et des valeurs conscientes du fuseau.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class Competition(Base):
     __tablename__ = "competitions"
 
@@ -24,7 +36,7 @@ class Competition(Base):
     country = Column(String, nullable=False)
     provider_code = Column(String, unique=True, nullable=False)
     active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=maintenant_utc)
 
 
 class Season(Base):
@@ -116,7 +128,7 @@ class XgMatchStats(Base):
     xa = Column(Float)
     shots = Column(Integer)
     source = Column(String)
-    retrieved_at = Column(DateTime, default=datetime.utcnow)
+    retrieved_at = Column(DateTime, default=maintenant_utc)
     quality_status = Column(String, default="unknown")
 
 
@@ -132,7 +144,7 @@ class Availability(Base):
     reason = Column(String)
     confirmed = Column(Boolean, default=False)
     source = Column(String)
-    retrieved_at = Column(DateTime, default=datetime.utcnow)
+    retrieved_at = Column(DateTime, default=maintenant_utc)
 
 
 class OddsSnapshot(Base):
@@ -145,7 +157,7 @@ class OddsSnapshot(Base):
     market = Column(String)
     selection = Column(String)
     odds = Column(Float)
-    captured_at = Column(DateTime, default=datetime.utcnow)
+    captured_at = Column(DateTime, default=maintenant_utc)
     is_closing = Column(Boolean, default=False)
     source = Column(String)
 
@@ -161,7 +173,7 @@ class Feature(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime, default=maintenant_utc)
     form_points_5 = Column(Float)
     form_points_10 = Column(Float)
     goals_for_avg_5 = Column(Float)
@@ -204,7 +216,7 @@ class Prediction(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
     model_version = Column(String)
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=maintenant_utc)
     # Date de coupure des données ayant servi à la prédiction, et versions des
     # sources consultées. Exigées par PROJECT_SPEC.md : sans elles, une
     # prédiction datée ne peut pas être rejouée ni auditée.

@@ -358,7 +358,7 @@ def _insert_odds(
         # l'instant reste NULL : le prétendre égal à la date du match ferait
         # passer une cote non datée pour une cote pré-match exploitable.
         #
-        # `null()` et non `None` : la colonne porte un `default=utcnow` que
+        # `null()` et non `None` : la colonne porte un `default=maintenant_utc` que
         # SQLAlchemy appliquerait sinon, redatant silencieusement le relevé au
         # moment de l'import.
         captured_at = (
