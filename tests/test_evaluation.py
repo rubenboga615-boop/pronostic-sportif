@@ -531,13 +531,47 @@ class TestDependancesOptionnelles:
 
         monkeypatch.setattr(builtins, "__import__", importer)
 
-    def test_le_noyau_s_importe_sans_les_extras(self, sans_extras):
-        import importlib
-        import sys
+    def test_le_noyau_s_importe_sans_les_extras(self):
+        """Un interpréteur neuf doit importer tout le noyau sans les extras.
 
-        for module in self.MODULES_DU_NOYAU:
-            sys.modules.pop(module, None)
-            importlib.import_module(module)
+        Le test tourne dans un sous-processus. Réimporter les modules dans
+        l'interpréteur courant laisserait des objets modules neufs attachés au
+        paquet parent : les tests qui remplacent une fonction du pipeline
+        patcheraient alors un module que plus personne n'appelle — une
+        contamination silencieuse, et c'est exactement ce qui s'est produit à
+        la première rédaction de ce test.
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        programme = textwrap.dedent(f"""
+            import sys
+
+            interdits = {sorted(self.EXTRAS)!r}
+
+            class Bloqueur:
+                def find_spec(self, nom, chemin=None, cible=None):
+                    if nom.split(".")[0] in interdits:
+                        raise ImportError(nom + " indisponible (simulation)")
+                    return None
+
+            sys.meta_path.insert(0, Bloqueur())
+            import importlib
+            for module in {list(self.MODULES_DU_NOYAU)!r}:
+                importlib.import_module(module)
+            print("ok")
+        """)
+
+        resultat = subprocess.run(
+            [sys.executable, "-c", programme],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        assert resultat.returncode == 0, resultat.stderr
+        assert "ok" in resultat.stdout
 
     def test_la_calibration_explique_ce_qui_manque(self, sans_extras):
         """Un ImportError nu n'aiderait personne à comprendre quoi installer."""
