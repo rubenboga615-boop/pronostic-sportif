@@ -157,11 +157,26 @@ Source opérationnelle pour :
 - Cotes disponibles
 - Confrontations directes
 
-Le plan gratuit est limité à 100 requêtes par jour. Utiliser API-Football pour les informations récentes, pas comme base historique principale.
+Le plan gratuit est limité à 100 requêtes par jour ; le **plan Pro souscrit en
+septembre 2026** lève cette contrainte. Utiliser API-Football pour tout ce qui
+regarde vers l'avant — calendrier, absences, cotes pré-match — et **jamais comme
+base historique principale** : l'historique reste à Football-Data.co.uk, dont
+l'import est écrit, testé, et autour duquel la discipline anti-fuite est bâtie.
 
-### The Odds API
+**Règle** : API-Football peut *enrichir* une ligne `matches` existante, jamais en
+*créer* une pour un match déjà joué. Sans cette règle, la table de correspondance
+d'équipes manquante dupliquerait douze saisons d'historique.
 
-Complément pour les cotes actuelles. Le forfait gratuit est limité à 500 crédits mensuels. Ne pas interroger pour tous les marchés de tous les matchs. Sélectionner les matchs et conserver les snapshots.
+Avant d'écrire le moindre collecteur, une **sonde d'une vingtaine d'appels** doit
+mesurer ce que l'abonnement livre réellement sur les cinq championnats :
+profondeur historique des cotes, bookmakers présents, fraîcheur des blessures,
+quota réellement décompté.
+
+### The Odds API — repoussée
+
+L'endpoint cotes d'API-Football couvre le besoin, et 500 crédits mensuels ne
+permettent pas un relevé régulier sur cinq championnats. Conservée comme
+solution de repli, non planifiée.
 
 ---
 
@@ -195,6 +210,16 @@ pronostic-sportif/
 │       ├── predictions.py
 │       ├── sources.py
 │       └── admin.py
+├── coupons/
+│   ├── __init__.py
+│   ├── selection.py        # seuils, une sélection par match
+│   ├── assemblage.py       # probabilité jointe, edge du coupon
+│   └── mise.py             # mise fixe, Kelly fractionnaire
+├── redaction/
+│   ├── __init__.py
+│   ├── interface.py        # rediger_presentation(coupon) -> dict
+│   ├── schema.py           # validation de la sortie
+│   └── verification.py     # tout nombre du texte figure dans l'entrée
 ├── collectors/
 │   ├── __init__.py
 │   ├── football_data/
@@ -740,6 +765,188 @@ Pour chaque marché, calculer :
 - Résultat par tranche de cote
 
 Ne jamais présenter uniquement l'accuracy.
+
+---
+
+## Génération de coupons
+
+Un coupon combine plusieurs sélections. Sa probabilité est un **produit**, donc
+ses erreurs se composent en puissance : c'est l'usage le plus exigeant qu'on
+puisse faire d'un moteur de probabilités. Les règles ci-dessous ne sont pas des
+préférences de style, ce sont les conditions pour que le calcul ait un sens.
+
+### Règles de construction
+
+1. **Une seule sélection par match.** Non négociable en V1. À l'intérieur d'un
+   même match, « Over 2,5 » et « BTTS oui » ne sont pas indépendants : les
+   multiplier surestime le coupon. La règle supprime le problème par
+   construction. Le jour où deux sélections d'un même match seront autorisées,
+   leur probabilité jointe devra être lue **dans la matrice de scores**, jamais
+   obtenue par multiplication.
+2. **Calibrer chaque jambe avant de multiplier.** Un calibrateur ajusté sur la
+   saison de validation est appliqué à chaque probabilité, puis seulement les
+   probabilités calibrées sont combinées.
+3. **Probabilité du coupon** = produit des probabilités calibrées des jambes
+   (les matchs distincts sont traités comme indépendants).
+4. **Edge du coupon** = probabilité du coupon − probabilité implicite de la
+   **cote combinée réellement offerte**, démarginalisée. Jamais contre une cote
+   estimée.
+5. **Aucune sélection sous les seuils** : probabilité calibrée minimale, edge
+   minimal, cote minimale. Les seuils sont des paramètres versionnés, pas des
+   constantes dans le code.
+
+### Formats
+
+| Type | Jambes | Rôle |
+|---|---|---|
+| Court | 3 | Sélections les plus solides |
+| Standard | 4 | Équilibre cote / probabilité |
+| Ambitieux | 5 | Réservé aux meilleurs matchs du jour |
+
+### Mise
+
+**Mise fixe** tant que le moteur n'est pas validé. **Kelly fractionnaire** (un
+quart de Kelly) ensuite, jamais Kelly plein.
+
+La **montante** est écartée du moteur (voir `docs/DECISIONS.md`, D-07) : une
+progression ne modifie pas l'espérance, seulement la variance, et accélère donc
+la ruine sur un modèle à espérance négative. Si elle est offerte comme option
+utilisateur, sa probabilité d'aboutissement (`p^n`) doit être affichée.
+
+### Condition de publication
+
+Le générateur de coupons est évalué **comme une stratégie à part entière**, aux
+côtés de `strategie_edge`, `strategie_naive` et `strategie_marche`, sur les deux
+saisons de test. Il n'est publié que si son rendement y est positif.
+
+---
+
+## Couche de rédaction assistée
+
+Une couche de modèle de langage transforme les sorties du moteur en texte
+lisible. Elle est **en aval, invisible, et sans pouvoir de décision**.
+
+### Périmètre
+
+- **Elle rédige.** Un texte d'explication par coupon, à partir des sélections,
+  des variables ayant pesé, et des scores calculés par le moteur.
+- **Elle ne juge pas.** Les contrôles de cohérence sont des règles déterministes
+  en code : nombre de jambes, une sélection par match, seuils de probabilité et
+  d'edge, absence de sélections contradictoires. Voir D-08.
+- **Elle ne calcule rien.** Aucune probabilité, aucune cote, aucun edge ne sort
+  d'elle. Le moteur fonctionne à l'identique si elle est absente.
+
+### Consigne de rédaction
+
+Le texte doit être **clair et exact**, énonçant la probabilité **et** son
+incertitude. Un texte « convaincant » au sujet d'une probabilité moyenne est un
+amplificateur d'erreur placé en série avec un moteur déjà surconfiant (D-09).
+
+### Garde-fous
+
+- Entrée : **JSON structuré uniquement**, jamais de texte libre.
+- Sortie : JSON validé contre un schéma avant tout stockage.
+- **Vérification numérique** : tout nombre présent dans le texte doit figurer
+  dans l'entrée. Un écart rejette la rédaction.
+- **Repli** : si l'appel échoue, le coupon est publié avec les données brutes du
+  moteur. La génération n'est jamais bloquée.
+
+### Volumétrie
+
+Un appel par coupon produit, jamais par utilisateur ni par session. Le coût suit
+la production, pas le trafic : 100 ou 100 000 utilisateurs consultent le même
+coupon déjà rédigé et stocké.
+
+### Fournisseur
+
+Derrière une interface unique (`rediger_presentation(coupon) -> dict`) et une
+variable d'environnement. C'est une fonction banalisée : le fournisseur doit
+pouvoir changer sans toucher au reste.
+
+---
+
+## Rôles, droits et interfaces
+
+### Les quatre rôles
+
+| Rôle | Accès |
+|---|---|
+| `visiteur` | Non authentifié. Historique de performance, méthodologie, aperçu limité |
+| `abonné` | Coupons du jour, détail par match, historique personnel |
+| `analyste` | Tout ce que voit l'administrateur, **en lecture seule**. Ne déclenche rien |
+| `administrateur` | Pilotage complet, dans les limites ci-dessous |
+
+Le rôle `analyste` existe pour qu'on puisse diagnostiquer un problème sans
+détenir le droit de lancer un import ou de publier.
+
+### Interface d'administration
+
+**1. Tableau de bord d'exploitation.** Matchs à venir avec et sans prédiction,
+coupons du jour par statut, dernier import, dernier entraînement, alertes
+ouvertes.
+
+**2. Sources et qualité.** État de chaque source (`source_health`), quota
+restant, dernier succès et dernier échec ; rapport du dernier import — lignes
+lues, insérées, doublons, erreurs, **colonnes disparues du CSV** ; complétude par
+saison et championnat : matchs, matchs avec cotes, matchs avec features.
+
+**3. Pilotage du moteur.** Lancer un import, recalculer les features, entraîner
+un modèle (version, dates de découpage, ξ), générer les prédictions d'une date,
+régler les matchs terminés. Chaque action est **journalisée** — qui, quand, quoi,
+résultat — et une action destructive est **refusée sans sauvegarde vérifiée**,
+conformément aux règles de sécurité du projet.
+
+**4. Registre des modèles.** Versions enregistrées, métriques de chacune, version
+active. **Promouvoir une version en production et revenir en arrière** — c'est le
+pouvoir le plus important de l'interface. Comparaison de deux versions sur le
+même jeu de test.
+
+**5. Performance et calibration.** Rendement, log-loss, Brier, AUC, ECE par
+marché, par championnat et par période ; courbe de calibration ; perte maximale
+depuis le pic ; comparaison systématique aux références naïve et marché.
+
+**6. Coupons.** Liste par statut, détail des jambes, résultat une fois réglé.
+**Dépublier un coupon** avant son échéance. Seuils de génération modifiables et
+versionnés. **Interrupteur d'arrêt global** suspendant toute publication (D-11).
+
+**7. Couche de rédaction.** Texte généré, entrée JSON, sortie brute, résultat de
+la vérification numérique. Réécriture ou suppression d'un texte avant
+publication. Taux d'échec des appels et coût cumulé.
+
+**8. Utilisateurs et abonnements.** Liste, statut, échéances, suspension d'un
+compte. Aucune donnée de paiement n'est stockée : elle reste chez le prestataire.
+
+**9. Journal d'audit.** Toute action d'administration, horodatée et attribuée.
+En ajout seul — jamais modifiable, jamais purgeable depuis l'interface.
+
+### Ce que l'administrateur ne peut pas faire
+
+- **Modifier une probabilité, une cote, un edge ou un résultat réglé** (D-10).
+  L'interface suspend, dépublie et relance ; elle ne retouche pas. Une donnée
+  fausse se corrige par migration versionnée.
+- Supprimer une entrée du journal d'audit.
+- Publier un coupon dont une jambe est sous les seuils, sans que la dérogation
+  soit journalisée et visible dans l'historique de performance.
+- Filtrer l'historique public pour n'en montrer que les bonnes périodes.
+
+### Ce que voient les utilisateurs
+
+**Visiteur** — l'historique de performance **complet et non filtré**, la
+méthodologie, un aperçu limité des coupons du jour. L'historique honnête est
+l'argument commercial le plus solide dont dispose ce produit ; il est public.
+
+**Abonné** — les coupons du jour, le détail par match (probabilité, variables
+ayant pesé, texte d'explication), son historique.
+
+**Jamais exposé** — les paramètres du modèle, les seuils de génération, les
+versions internes, les sorties brutes de la couche de rédaction, les données
+d'autres utilisateurs.
+
+### Affichage obligatoire
+
+Toute probabilité affichée l'est avec son incertitude ou son historique de
+réalisation. Aucun coupon n'est présenté comme sûr. Le risque de perte est
+rappelé sur les écrans de coupon.
 
 ---
 

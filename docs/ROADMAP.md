@@ -3,10 +3,10 @@
 > Établie le 6 septembre 2026, sur l'audit en lecture seule du dépôt.
 > Les repères `C1`, `E6`, `M8`… renvoient aux constats de cet audit.
 
-Treize étapes, de l'état constaté à un moteur qui tourne seul en production.
-L'ordre n'est pas négociable : chaque étape lève un blocage de la suivante.
-**Assainir avant de charger, charger avant de modéliser, modéliser avant
-d'ouvrir les vannes.**
+Dix-sept étapes, de l'état constaté à un produit en service. L'ordre n'est pas
+négociable : chaque étape lève un blocage de la suivante. **Assainir avant de
+charger, charger avant de modéliser, modéliser avant d'ouvrir les vannes, et
+prouver que le moteur gagne avant d'en faire un produit.**
 
 Chaque étape se termine sur un critère vérifiable — une commande à lancer, un
 nombre à constater — et non sur une impression. Les durées sont en jours de
@@ -15,12 +15,17 @@ travail effectif, hors téléchargements et temps d'attente.
 ## Avancement
 
 **Lots A et B terminés le 6 septembre 2026** — étapes 0 à 6. Le seul reste
-de ces lots est l'**import des ~19 000 matchs**, à lancer sur votre machine :
-le code est prêt et testé, mais le réseau de l'environnement de développement
-bloque football-data.co.uk.
+de ces lots est l'**import des ~19 900 matchs** (12 saisons × 5 championnats),
+à lancer sur votre machine : le code est prêt et testé, mais le réseau de
+l'environnement de développement bloque football-data.co.uk.
 
-Reste le lot C (API-Football, Understat, application) et le lot D
-(automatisation, déploiement, suivi).
+**Étape 6 b ajoutée le 7 septembre 2026** après analyse du document d'origine du
+projet : une part de ce qu'il réclamait dort déjà en base, faute de calcul
+dérivé. Elle ne dépend d'aucune source nouvelle et se place avant le lot C.
+
+Restent ensuite le lot C (API-Football, Understat, application et administration),
+le lot D (automatisation, déploiement, suivi) et le lot E (coupons, rédaction
+assistée, abonnements) — ce dernier conditionné à un moteur validé.
 
 ## État constaté au départ
 
@@ -28,7 +33,7 @@ Reste le lot C (API-Football, Understat, application) et le lot D
 |---|---|
 | Corpus | 760 matchs, 1 championnat sur 5, 2 saisons sur 11 |
 | Prédictions | 0 — le pipeline n'a jamais été exécuté sur la base |
-| Sources | 1 sur 4 — Understat, API-Football et The Odds API restent à écrire |
+| Sources | 1 sur 3 retenues — Understat et API-Football restent à écrire |
 | Tests | 211 sur 214 au départ, 226 en local non commités |
 
 ---
@@ -73,7 +78,7 @@ lignes à jeter.
 ### Étape 2 — Rendre le calcul de features linéaire · ✅ fait le 06/09/2026
 
 Le pipeline rejoue toute la boucle Elo et tout le classement pour chaque match,
-deux fois. À 760 matchs il passe ; à 19 000, il ne finira pas (`E6`).
+deux fois. À 760 matchs il passe ; à 19 900, il ne finira pas (`E6`).
 
 - Elo et classement incrémentaux, sur un seul balayage chronologique
 - Index `matches(competition_id, match_date)` et les deux autres repérés dans `ACTIONS_EN_ATTENTE.md`
@@ -84,14 +89,14 @@ inférieure à 5 minutes pour 20 000 matchs.
 
 ---
 
-## Lot B — Construire le moteur · ✅ terminé (import des 19 000 matchs restant à lancer)
+## Lot B — Construire le moteur · ✅ terminé (import des 19 900 matchs restant à lancer)
 
 Le corpus, puis un vrai modèle, puis tous les marchés de la Phase 1, puis une
 évaluation qui veut dire quelque chose.
 
 ### Étape 3 — Constituer le corpus historique · ⚠️ code fait, import à lancer
 
-Environ 19 000 matchs sont à un téléchargement gratuit, avec leurs cotes de
+Environ 19 900 matchs sont à un téléchargement gratuit, avec leurs cotes de
 clôture. Le protocole de validation chronologique de la spec (entraînement
 2015→2021) est aujourd'hui inexécutable : la base ne contient rien avant
 août 2023.
@@ -99,10 +104,10 @@ août 2023.
 - Étendre le parseur aux cotes Over/Under 2,5, ouverture et clôture (`N1`) — vingt colonnes présentes dans les CSV et intégralement ignorées
 - Supprimer les mappings morts `IWH` et `BbMxH`, disparus des fichiers depuis des saisons
 - Détecter et signaler la disparition d'une colonne attendue au lieu de l'ignorer (`M8`)
-- Importer les 5 championnats × 11 saisons, après sauvegarde vérifiée
+- Importer les 5 championnats × 12 saisons (2014/15 → 2025/26), après sauvegarde vérifiée
 - Horodater le rapport de qualité au lieu d'écraser `import_report.json` (`N2`)
 
-**Fait quand** — ≈ 19 000 matchs · 5 compétitions · cotes O/U en base · rapport
+**Fait quand** — ≈ 19 900 matchs · 5 compétitions · cotes O/U en base · rapport
 de qualité archivé.
 
 ### Étape 4 — Le moteur de buts, pour de vrai · ✅ fait le 06/09/2026
@@ -152,7 +157,45 @@ calibration par marché · ROI mesuré contre les cotes de clôture.
 
 ---
 
-## Lot C — Ouvrir sur le réel · 8 à 11 jours
+### Étape 6 b — Les calculs dérivés qui manquent · 1 à 2 jours
+
+Le document d'origine du projet réclame une centaine de variables. La
+comparaison au dépôt donne un résultat inattendu : **une partie de ce qui
+« manque » est déjà en base et n'est simplement jamais dérivée**. Corners,
+fautes, cartons, buts de mi-temps et cotes d'ouverture sont importés depuis le
+premier jour.
+
+Le trou le plus coûteux concerne la mi-temps : **15 sélections sur 31** portent
+sur la première période, et **aucune variable ne la décrit**. C'est l'explication
+la plus probable du 1N2 première mi-temps mesuré à 0,609 d'AUC, contre 0,693 en
+match entier.
+
+- Dix variables de mi-temps : `ht_home_win_rate`, `ht_away_win_rate`,
+  `ht_draw_rate`, `ht_home_goals_avg`, `ht_away_goals_avg`, `ht_total_goals_avg`,
+  `ht_over_05_rate`, `ht_over_15_rate`, `ht_over_25_rate`, `ht_over_35_rate`
+- Fatigue et calendrier : `rest_days_diff`, `matches_last_7_days`,
+  `matches_last_14_days`
+- Solidité : `clean_sheets_5`, `failed_to_score_5` — déjà calculés par
+  `form.py`, aujourd'hui jetés faute de colonne
+- **Diagnostiquer le BTTS à 0,537 d'AUC** : anormalement bas pour un marché
+  dérivé des mêmes λ qui donnent 0,805 en Over/Under. Défaut de dérivation
+  probable, pas manque de données
+- Lire `Referee`, présent dans le CSV et jamais parsé (utile en Phase 2)
+- Trancher les quatre colonnes orphelines — `home_away_goals_for_avg`,
+  `home_away_goals_against_avg`, `opponent_strength`, `data_completeness` —
+  déclarées au schéma et qu'aucun code n'écrit : les brancher ou les retirer
+
+Aucune source nouvelle, aucun quota, aucun scraping. Contrainte inchangée :
+toute variable est bornée à la saison et strictement antérieure au match.
+
+**Fait quand** — les dix variables de mi-temps sont peuplées sur la base
+complète · l'AUC du 1N2 première mi-temps est mesurée avant et après · le BTTS
+est diagnostiqué, corrigé ou documenté comme limite structurelle · plus aucune
+colonne déclarée sans écrivain.
+
+---
+
+## Lot C — Ouvrir sur le réel · 10 à 14 jours
 
 Jusqu'ici, le système ne sait rien des matchs à venir. Ce lot le connecte au
 présent, puis rend le tout consultable.
@@ -185,18 +228,54 @@ ne la remplace pas de façon fiable.
 **Fait quand** — `xg_match_stats` peuplé · features xG non nulles · backtest
 comparé avec et sans Understat.
 
-### Étape 9 — L'application : API et tableau de bord · 3 à 4 jours
+### Étape 9 — L'application : API et interface d'administration · 5 à 7 jours
 
 Aucun routeur n'est branché dans `main.py` ; les cinq modules de routes
 renvoient « à implémenter » et les schémas Pydantic ne sont importés nulle part
 (`E7`).
 
-- Brancher les routeurs et implémenter matchs, prédictions, sources et administration sur les schémas existants
+**9.1 — API et sécurité**
+
+- Brancher les routeurs : matchs, prédictions, sources, administration
 - Restreindre le CORS, aujourd'hui ouvert à tous avec identifiants (`F4`)
-- Connecter le tableau de bord : matchs à venir, prédictions du jour, qualité des données, historique, métriques
+- Authentification et les quatre rôles : `visiteur`, `abonné`, `analyste`,
+  `administrateur` — aucun compte d'administration par défaut, jamais
+
+**9.2 — Interface d'administration** (spécifiée dans `PROJECT_SPEC.md`)
+
+Neuf écrans, dont l'ordre reflète la fréquence d'usage réelle :
+
+1. Tableau de bord d'exploitation
+2. Sources et qualité — quota, dernier import, **colonnes disparues du CSV**,
+   complétude par saison et championnat
+3. Pilotage du moteur — import, features, entraînement, prédictions, règlement.
+   Toute action journalisée ; **action destructive refusée sans sauvegarde
+   vérifiée**
+4. Registre des modèles — **promotion en production et retour arrière**, le
+   pouvoir le plus important de l'interface
+5. Performance et calibration — par marché, championnat et période, contre les
+   références naïve et marché
+6. Coupons — statuts, dépublication, seuils versionnés, **interrupteur d'arrêt
+   global**
+7. Couche de rédaction — texte, entrée, sortie brute, vérification numérique
+8. Utilisateurs et abonnements — aucune donnée de paiement stockée
+9. Journal d'audit — en ajout seul, ni modifiable ni purgeable
+
+Interdits par construction (D-10) : modifier une probabilité, une cote, un edge
+ou un résultat réglé ; supprimer une entrée du journal ; filtrer l'historique
+public.
+
+**9.3 — Interface publique**
+
+- Visiteur : historique de performance **complet et non filtré**, méthodologie
+- Abonné : coupons du jour, détail par match, historique personnel
+- Toute probabilité affichée avec son incertitude ; aucun coupon présenté comme
+  sûr
 
 **Fait quand** — `GET /predictions/{match_id}` renvoie de vraies prédictions ·
-le tableau de bord n'affiche plus un seul écran vide.
+un administrateur peut promouvoir une version de modèle et revenir en arrière ·
+l'interrupteur d'arrêt suspend effectivement la publication · un analyste voit
+tout et ne déclenche rien · toute action d'administration figure au journal.
 
 ---
 
@@ -246,21 +325,73 @@ réponse chiffrée et datée.
 
 ---
 
+## Lot E — Le produit · 6 à 9 jours · **conditionné**
+
+Ce lot ne démarre **que si** le rendement du moteur est positif sur les deux
+saisons de test. Construit avant, il ne ferait que distribuer plus efficacement
+un produit dont on ignore s'il fonctionne (D-06).
+
+### Étape 13 — Génération de coupons · 3 à 4 jours
+
+- Une sélection par match ; calibration de chaque jambe **avant** multiplication
+- Probabilité jointe, edge contre la **cote combinée réellement offerte**
+- Formats 3, 4 et 5 jambes ; seuils versionnés, jamais en dur
+- Mise fixe, puis Kelly fractionnaire. **Pas de montante dans le moteur** (D-07)
+- `strategie_coupon` évaluée comme les autres stratégies sur les saisons de test
+- Statut `brouillon` → `publié`, avec interrupteur d'arrêt (D-11)
+
+**Fait quand** — le générateur est backtesté sur 2024/25 et 2025/26 · son
+rendement est publié à côté des références naïve et marché · aucun coupon n'est
+publié si ce rendement est négatif.
+
+### Étape 14 — Couche de rédaction assistée · 1 à 2 jours
+
+- Interface unique `rediger_presentation(coupon) -> dict`, fournisseur derrière
+  une variable d'environnement
+- Entrée JSON structurée, sortie validée contre un schéma
+- **Vérification numérique** : tout nombre du texte doit figurer dans l'entrée
+- Repli sans IA : le coupon se publie avec les données brutes
+- Consigne : exacte, pas « convaincante » (D-09). Aucun verdict bloquant (D-08)
+
+**Fait quand** — un coupon rédigé, stocké et affiché · un appel en échec ne
+bloque rien · une valeur inventée est rejetée par le contrôle numérique.
+
+### Étape 15 — Abonnements et interface publique · 2 à 3 jours
+
+- Rôles `visiteur` et `abonné`, échéances, suspension
+- Écrans publics : historique de performance, coupons du jour, détail par match
+- Paiement délégué au prestataire ; aucune donnée bancaire en base
+
+**Fait quand** — un abonné voit les coupons du jour, un visiteur voit
+l'historique complet, et personne ne voit les paramètres du modèle.
+
+---
+
 ## Hors périmètre, volontairement
 
 - **Marchés de Phase 2** — handicaps, scores exacts, HT/FT, buteurs : interdits sans validation explicite (`knowledge.md`).
 - **Modèle d'apprentissage automatique** — à ouvrir après l'étape 6, jamais avant : entraîné aujourd'hui, il apprendrait surtout la fuite des cotes de clôture.
-- **LLM dans l'application** — utile pour la table de correspondance d'équipes (hors ligne) et l'explication des prédictions ; jamais dans le calcul des probabilités, qui doit rester déterministe et rejouable.
+- **LLM dans le calcul** — la couche de rédaction (étape 14) écrit, elle ne juge ni ne calcule. Aucune probabilité, aucun verdict bloquant (D-08). Le moteur doit rester déterministe et rejouable des années plus tard.
+- **Montante dans le moteur** — écartée (D-07) : une progression ne modifie pas l'espérance, seulement la variance. Tolérée comme choix explicite de l'utilisateur, avec sa probabilité d'aboutissement affichée.
+- **Probabilité du marché en variable d'entrée** — écartée (D-04) : le modèle apprendrait à recopier le bookmaker et l'edge tendrait vers zéro par construction.
 - **PostgreSQL** — SQLite tient les 20 000 matchs ; à reconsidérer si plusieurs écrivains concurrents apparaissent.
 
 ## Chemin critique
 
-Les étapes 1 et 2 conditionnent tout : importer 19 000 matchs avec le classement
+Les étapes 1 et 2 conditionnent tout : importer 19 900 matchs avec le classement
 inter-saisons et le pipeline quadratique, c'est produire vingt-cinq fois plus de
 lignes fausses, très lentement.
+
+L'étape 6 b ne dépend d'aucune source et peut démarrer immédiatement — c'est le
+meilleur rapport valeur/effort restant. L'import des 12 saisons la précède
+idéalement, pour que ses effets soient mesurables.
 
 Les étapes 8 (xG) et 9 (application) peuvent se mener en parallèle par une
 seconde personne. Tout le reste est strictement séquentiel.
 
-**21 à 32 jours de travail effectif** pour un développeur, soit six à huit
-semaines à mi-temps.
+Le **lot E est conditionné** : il ne démarre que si le rendement du moteur est
+positif sur les deux saisons de test. Si la mesure est négative, le travail
+repart sur le moteur, pas sur le produit.
+
+**Reste 20 à 30 jours de travail effectif** pour un développeur — dont 6 à 9
+pour le seul lot E, qui peut ne jamais être engagé.

@@ -98,12 +98,13 @@ pronostic-sportif/
 
 ## Sources de données
 
-| Source | Usage | Limite gratuite |
-|--------|-------|-----------------|
-| Football-Data.co.uk | Résultats historiques, cotes | Illimité |
-| Understat | xG, xGA, tirs | Non officiel |
-| API-Football | Calendriers, blessures, cotes | 100 req/jour |
-| The Odds API | Cotes actuelles | 500 crédits/mois |
+| Source | Usage | Statut |
+|--------|-------|--------|
+| Football-Data.co.uk | Résultats historiques, statistiques, cotes | **Écrite** — 12 saisons, 2014/15 → 2025/26 |
+| API-Football | Calendriers, matchs à venir, blessures, cotes | À écrire (étape 7), plan Pro |
+| Understat | xG, xGA, NPxG, xA | À écrire (étape 8), pas d'API officielle |
+| The Odds API | Cotes actuelles | Repoussée — couverte par API-Football |
+| ~~football-data.org~~ | — | **Écartée** : pas de cotes de bookmakers (D-03) |
 
 ## Tests
 

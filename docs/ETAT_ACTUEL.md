@@ -20,9 +20,17 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
   corrigées)
 
 ## Feuille de route
-`docs/ROADMAP.md`. **Lots A et B terminés (étapes 0 à 6.)** Reste le lot C
-(API-Football, Understat, API REST et tableau de bord) et le lot D
-(automatisation quotidienne, déploiement, suivi de performance).
+`docs/ROADMAP.md`. **Lots A et B terminés (étapes 0 à 6.)**
+
+Prochaine étape de code : **6 b — les calculs dérivés qui manquent**, dont les
+dix variables de mi-temps. Elle ne dépend d'aucune source nouvelle.
+
+Restent le lot C (API-Football, Understat, API et interface d'administration),
+le lot D (automatisation, déploiement, suivi) et le lot E (coupons, rédaction
+assistée, abonnements) — ce dernier **conditionné** à un rendement positif
+mesuré sur les deux saisons de test.
+
+Décisions et motifs : `docs/DECISIONS.md`.
 
 ## Ce qui fonctionne de bout en bout
 Import → features → entraînement → prédiction → règlement → valorisation →
@@ -88,7 +96,7 @@ le classement, l'Elo et les jours de repos actuellement en base ont été
 calculés avec les défauts corrigés depuis.
 
 ## Prochaine action
-**Importer les 5 championnats × 11 saisons** :
+**Importer les 5 championnats × 12 saisons** (2014/15 → 2025/26) :
 
 ```bash
 cp data/pronostic.db data/backups/pronostic_avant_import_complet.db
@@ -97,8 +105,9 @@ python scripts/import_historical_data.py
 
 Le code est prêt et testé ; le réseau de l'environnement de développement
 bloque football-data.co.uk, l'import doit donc être lancé depuis votre machine.
-Le protocole de validation chronologique du cahier des charges (entraînement
-2015→2021) reste inexécutable tant que la base s'arrête à août 2023.
+Le protocole de validation actualisé (entraînement 2015/16 → 2022/23, validation
+2023/24, test 2024/25 et 2025/26) reste inexécutable tant que la base s'arrête à
+août 2023.
 
 Ensuite : `python scripts/train_models.py` puis le pipeline de prédiction.
 
@@ -125,6 +134,10 @@ Ensuite : `python scripts/train_models.py` puis le pipeline de prédiction.
 - Ne jamais lancer d'import sans confirmation explicite.
 - Toujours exécuter `python -m pytest -q` avant et après toute modification.
 - Ne pas implémenter les marchés de Phase 2 sans validation (voir `knowledge.md`).
+- Ne publier aucun coupon tant que le rendement n'est pas positif sur les deux
+  saisons de test (`docs/DECISIONS.md`, D-06).
+- Ne jamais modifier une probabilité, une cote, un edge ou un résultat réglé
+  hors migration versionnée (D-10).
 - Créer un commit séparé par action ; ne jamais committer sans demande explicite.
 - Arrêter immédiatement au premier test échoué et afficher l'erreur complète.
 - Respecter la règle anti-fuite : aucune donnée future dans les features.
