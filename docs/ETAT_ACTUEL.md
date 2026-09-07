@@ -9,9 +9,15 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **393 réussis, 3 ignorés** (les tests ignorés sont les
+- Suite de tests : **396 réussis, 3 ignorés** (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
+- Sans l'extra `ml` : **392 réussis, 7 ignorés** — les quatre tests de
+  calibration s'ignorent faute de scikit-learn, et c'est voulu. Le noyau
+  (import, features, entraînement, prédiction, règlement, backtest) n'en a pas
+  besoin. Pour les exécuter : `pip install -e ".[ml]"`.
 - Style : **zéro violation `ruff`**, vérifié en intégration continue
+- Avertissements : **zéro** (les 2 914 dépréciations `datetime.utcnow()` sont
+  corrigées)
 
 ## Feuille de route
 `docs/ROADMAP.md`. **Lots A et B terminés (étapes 0 à 6.)** Reste le lot C
@@ -61,7 +67,9 @@ fois qu'il y aura une saison de validation distincte.
 - **Marchés** : 31 sélections par match (match entier + première mi-temps +
   mi-temps la plus prolifique).
 - **Règlement, valorisation, backtest, calibration** : la boucle est fermée.
-- **Intégration continue** : `ruff check`, `ruff format --check` et `pytest`.
+- **Intégration continue** : `ruff check`, `ruff format --check` et `pytest`
+  sur Python 3.11 et 3.12, plus un job qui installe le noyau seul et vérifie
+  que la suite reste verte sans les extras.
 
 ## Migrations à appliquer sur la base de production
 À exécuter dans cet ordre, **après sauvegarde vérifiée** :
