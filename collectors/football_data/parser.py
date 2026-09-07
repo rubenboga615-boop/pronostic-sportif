@@ -20,6 +20,12 @@ RESULT_COLUMNS = {
     "HTHG": "home_ht_goals",
     "HTAG": "away_ht_goals",
     "HTR": "ht_result",
+    # Arbitre. Sans effet sur les marchés de buts de la Phase 1, mais c'est la
+    # variable centrale des marchés de cartons de la Phase 2 : les écarts entre
+    # arbitres y sont bien plus marqués qu'entre équipes. Elle est gratuite,
+    # présente dans le CSV, et irrécupérable a posteriori si on ne l'importe
+    # pas maintenant.
+    "Referee": "referee",
     # Statistiques match
     "HS": "home_shots",
     "AS": "away_shots",

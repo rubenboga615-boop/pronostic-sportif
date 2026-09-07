@@ -96,6 +96,24 @@ class TestMigrationMiTemps:
         assert base_avant.execute("SELECT form_points_5 FROM features").fetchone() == (9.0,)
 
 
+class TestMigrationArbitre:
+    FICHIER = MIGRATIONS / "20260907_add_referee.sql"
+
+    def test_la_colonne_est_ajoutee_sans_toucher_aux_donnees(self, tmp_path):
+        chemin = tmp_path / "avant.db"
+        con = sqlite3.connect(chemin)
+        con.executescript("CREATE TABLE matches (id INTEGER PRIMARY KEY, home_goals INTEGER)")
+        con.execute("INSERT INTO matches (home_goals) VALUES (3)")
+        con.commit()
+
+        con.executescript(self.FICHIER.read_text(encoding="utf-8"))
+
+        colonnes = {c[1] for c in con.execute("PRAGMA table_info(matches)")}
+        assert "referee" in colonnes
+        assert con.execute("SELECT home_goals, referee FROM matches").fetchone() == (3, None)
+        con.close()
+
+
 class TestToutesLesMigrations:
     def test_chaque_migration_exige_une_sauvegarde(self):
         """La règle de sécurité du projet doit être rappelée dans le fichier.

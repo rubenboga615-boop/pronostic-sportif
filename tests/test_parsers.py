@@ -147,3 +147,38 @@ class TestParser:
         assert df["home_shots"].iloc[0] == 15
         assert df["away_shots_on_target"].iloc[0] == 4
         assert df["home_corners"].iloc[0] == 8
+
+
+class TestArbitre:
+    """La colonne Referee est lue, nettoyée, et tolérée absente.
+
+    Sans effet sur les marchés de buts de la Phase 1. Importée maintenant parce
+    qu'elle est gratuite, présente dans le CSV, et qu'elle serait irrécupérable
+    a posteriori — les fichiers de Football-Data ne sont pas versionnés.
+    """
+
+    def test_l_arbitre_est_lu(self, tmp_path):
+        csv = tmp_path / "E0_2526.csv"
+        csv.write_text(
+            "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,Referee\n"
+            "E0,10/08/2025,Arsenal,Chelsea,2,1,H,M Oliver\n",
+            encoding="utf-8",
+        )
+
+        df = parse_csv(csv)
+
+        assert "referee" in df.columns
+        assert df["referee"].iloc[0] == "M Oliver"
+
+    def test_son_absence_est_toleree(self, tmp_path):
+        """Elle manque dans les saisons anciennes de certains championnats."""
+        csv = tmp_path / "E0_1415.csv"
+        csv.write_text(
+            "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+            "E0,10/08/2014,Arsenal,Chelsea,2,1,H\n",
+            encoding="utf-8",
+        )
+
+        df = parse_csv(csv)
+
+        assert "referee" not in df.columns or df["referee"].isna().all()

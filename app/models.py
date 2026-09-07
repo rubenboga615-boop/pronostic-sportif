@@ -91,6 +91,9 @@ class Match(Base):
     away_shots = Column(Integer)
     home_shots_on_target = Column(Integer)
     away_shots_on_target = Column(Integer)
+    # Arbitre. Inutilisé en Phase 1 ; stocké parce que la donnée est gratuite,
+    # présente dans le CSV, et perdue pour toujours si l'import la jette.
+    referee = Column(String)
     source_created_at = Column(DateTime)
     source_updated_at = Column(DateTime)
 

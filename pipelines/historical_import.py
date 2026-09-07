@@ -734,6 +734,7 @@ def _process_match_row(
         status=match_status,
         home_goals=int(hg) if pd.notna(hg) else None,
         away_goals=int(ag) if pd.notna(ag) else None,
+        referee=str(row["referee"]).strip() or None if pd.notna(row.get("referee")) else None,
         home_ht_goals=int(row["home_ht_goals"]) if pd.notna(row.get("home_ht_goals")) else None,
         away_ht_goals=int(row["away_ht_goals"]) if pd.notna(row.get("away_ht_goals")) else None,
         home_shots=int(row["home_shots"]) if pd.notna(row.get("home_shots")) else None,
