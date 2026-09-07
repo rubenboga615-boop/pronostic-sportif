@@ -157,7 +157,7 @@ calibration par marché · ROI mesuré contre les cotes de clôture.
 
 ---
 
-### Étape 6 b — Les calculs dérivés qui manquent · 1 à 2 jours
+### Étape 6 b — Les calculs dérivés qui manquent · ✅ fait le 07/09/2026
 
 Le document d'origine du projet réclame une centaine de variables. La
 comparaison au dépôt donne un résultat inattendu : **une partie de ce qui
@@ -188,10 +188,22 @@ match entier.
 Aucune source nouvelle, aucun quota, aucun scraping. Contrainte inchangée :
 toute variable est bornée à la saison et strictement antérieure au match.
 
-**Fait quand** — les dix variables de mi-temps sont peuplées sur la base
-complète · l'AUC du 1N2 première mi-temps est mesurée avant et après · le BTTS
-est diagnostiqué, corrigé ou documenté comme limite structurelle · plus aucune
-colonne déclarée sans écrivain.
+**Fait.** Les dix variables de mi-temps, l'encombrement du calendrier et la
+solidité sont calculés et persistés ; plus aucune colonne n'est déclarée sans
+écrivain ; l'arbitre est importé.
+
+**Le diagnostic du BTTS a renversé la conclusion.** `derive_btts` était correct.
+C'est la métrique qui trompait : l'AUC était calculée sur toutes les sélections
+d'un marché confondues, et `over_under` en compte huit, réparties sur quatre
+lignes de fréquences très différentes. Une simulation depuis un modèle
+parfaitement spécifié donne les plafonds atteignables — 0,819 pour l'over/under
+groupé, 0,635 pour la seule ligne 2,5, et 0,606 pour le BTTS. Le 0,805 mesuré
+frôlait donc le plafond d'une mesure flatteuse, et le 0,537 du BTTS n'a rien
+d'anormal. L'AUC est désormais publiée par groupe exclusif.
+
+**Reste à mesurer sur la base complète** : l'effet des variables de mi-temps sur
+l'AUC du 1N2 de première période. Il faut l'import des 12 saisons pour que la
+comparaison ait un sens.
 
 ---
 

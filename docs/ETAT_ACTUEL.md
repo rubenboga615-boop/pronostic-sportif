@@ -9,9 +9,9 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **396 réussis, 3 ignorés** (les tests ignorés sont les
+- Suite de tests : **429 réussis, 3 ignorés** (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
-- Sans l'extra `ml` : **392 réussis, 7 ignorés** — les quatre tests de
+- Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
   calibration s'ignorent faute de scikit-learn, et c'est voulu. Le noyau
   (import, features, entraînement, prédiction, règlement, backtest) n'en a pas
   besoin. Pour les exécuter : `pip install -e ".[ml]"`.
@@ -22,8 +22,8 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## Feuille de route
 `docs/ROADMAP.md`. **Lots A et B terminés (étapes 0 à 6.)**
 
-Prochaine étape de code : **6 b — les calculs dérivés qui manquent**, dont les
-dix variables de mi-temps. Elle ne dépend d'aucune source nouvelle.
+**Étape 6 b terminée le 07/09/2026.** Prochaine étape de code : le lot C
+(API-Football, Understat, API et interface d'administration).
 
 Restent le lot C (API-Football, Understat, API et interface d'administration),
 le lot D (automatisation, déploiement, suivi) et le lot E (coupons, rédaction
@@ -67,9 +67,18 @@ fois qu'il y aura une saison de validation distincte.
   écriture atomique, refus des réponses vides.
 - **Pipeline de features** : contexte incrémental, coût par match indépendant
   de la taille de la base (~17 ms, soit ~5 min pour 20 000 matchs).
-- **Anti-fuite** : classement, Elo et repos bornés à la saison ; mouvement de
-  cote étanche par construction ; test anti-fuite par historique empoisonné et
-  mouchard de dates.
+- **Anti-fuite** : classement, Elo, repos et variables de mi-temps bornés à la
+  saison ; mouvement de cote étanche par construction ; test anti-fuite par
+  historique empoisonné et mouchard de dates.
+- **Première mi-temps** : dix variables décrivant le comportement des équipes
+  avant la pause. Quinze des trente et une sélections en dépendent, et rien ne
+  la décrivait — `HTHG`/`HTAG` étaient en base depuis le premier import, seul
+  le calcul dérivé manquait.
+- **Encombrement du calendrier** : matchs joués sur 7 et 14 jours, écart de
+  repos entre les deux équipes.
+- **Plus aucune colonne orpheline** : les quatre colonnes déclarées au schéma
+  sans écrivain — `home_away_goals_*`, `opponent_strength`,
+  `data_completeness` — sont toutes alimentées.
 - **Dixon-Coles** entraîné par maximum de vraisemblance, avec pondération
   temporelle, ajusté par compétition, enregistré dans le registre des modèles.
 - **Marchés** : 31 sélections par match (match entier + première mi-temps +
@@ -90,6 +99,13 @@ fois qu'il y aura une saison de validation distincte.
    en tête de fichier).
 3. `migrations/20260906_add_prediction_traceability.sql` — colonnes
    `data_cutoff_at` et `source_versions`. À n'exécuter qu'une fois.
+4. `migrations/20260907_add_half_time_features.sql` — quinze colonnes :
+   les dix variables de mi-temps, l'encombrement du calendrier, la solidité.
+5. `migrations/20260907_add_referee.sql` — l'arbitre sur `matches`.
+
+Les cinq sont désormais encadrées par une transaction : interrompue, une
+migration ne laisse plus la base à moitié modifiée. Un test le vérifie, ainsi
+que la concordance entre le schéma migré et celui de l'ORM.
 
 Puis **recalculer les features** (`python -m pipelines.feature_pipeline`) :
 le classement, l'Elo et les jours de repos actuellement en base ont été

@@ -1,5 +1,32 @@
 # Historique
 
+## 2026-09-07 - Étape 6 b : les calculs dérivés qui manquaient
+
+- **Dix variables de première mi-temps** (`features/half_time.py`) — quinze
+  des trente et une sélections d'un match y portent, et rien ne la décrivait.
+  `HTHG`/`HTAG` étaient en base depuis le premier import ; seuls le transport
+  et le calcul dérivé manquaient.
+- **Encombrement du calendrier** — matchs sur 7 et 14 jours, écart de repos.
+  Information absente des résultats passés, contrairement à la forme, à l'Elo
+  et au classement, tous dérivés du même registre de buts.
+- **`failed_to_score_5`** — pendant du clean sheet, autre moitié du BTTS.
+- **Les quatre colonnes orphelines sont alimentées** : `home_away_goals_*` par
+  côté, `opponent_strength` par l'Elo des adversaires récents,
+  `data_completeness` par la part de colonnes renseignées.
+- **L'AUC se mesure désormais par groupe exclusif.** Le BTTS à 0,537 passait
+  pour un défaut face à l'over/under à 0,805 ; la simulation depuis un modèle
+  parfait montre l'inverse — plafonds de 0,606 et 0,819 respectivement. La
+  seconde mesure était flatteuse, gonflée par le mélange de quatre lignes de
+  fréquences différentes. Aucun code n'était en cause.
+- **Arbitre importé** — inutile en Phase 1, central en Phase 2, et perdu pour
+  toujours si le fournisseur retire la colonne.
+- **Les cinq migrations sont transactionnelles.** Un test de concordance
+  migration/ORM entre au dépôt et trouve aussitôt que les quatre migrations
+  existantes ne l'étaient pas — dont le purge d'`odds_movement`, qui
+  interrompu entre ses deux `UPDATE` aurait laissé la base dans un état
+  qu'aucune version du code ne sait interpréter.
+- Suite : **429 réussis, 3 ignorés**.
+
 ## 2026-09-07 - Décisions produit et périmètre
 
 - Corpus étendu à **12 saisons** (2014/15 → 2025/26), dont 2014/15 en saison de
