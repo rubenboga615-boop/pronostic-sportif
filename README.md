@@ -16,9 +16,12 @@ Moteur probabiliste de pronostic football couvrant les cinq grands championnats 
 |--------|:---:|:---:|
 | 1N2 | ✅ | ✅ |
 | Double chance | ✅ | ✅ |
-| Over/Under 0.5, 1.5, 2.5, 3.5 | ✅ | ✅ |
-| BTTS | ✅ | ❌ |
+| Over/Under | ✅ 0.5, 1.5, 2.5, 3.5 | ✅ 0.5, 1.5, 2.5 |
+| BTTS | ✅ | ❌ hors périmètre |
 | Mi-temps la plus prolifique | ✅ | — |
+
+Soit **31 sélections par match**. Les marchés de mi-temps demandent des modèles
+de mi-temps entraînés ; sans eux, ils ne sont pas produits plutôt que devinés.
 
 ## Stack technique
 

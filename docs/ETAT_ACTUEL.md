@@ -1,7 +1,7 @@
 # État actuel du projet
 
 > Fichier de référence à lire en premier. Tenir à jour après chaque session.
-> Dernière mise à jour : 2026-09-06.
+> Dernière mise à jour : 2026-09-07.
 
 ## Projet
 Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligue 1).
@@ -9,68 +9,102 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **223 réussis, 3 ignorés** (les tests ignorés sont les
+- Suite de tests : **393 réussis, 3 ignorés** (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Style : **zéro violation `ruff`**, vérifié en intégration continue
 
 ## Feuille de route
-`docs/ROADMAP.md` découpe le travail restant en treize étapes, du nettoyage des
-données au déploiement. **L'étape 0 est terminée ; la suite commence à
-l'étape 1.**
+`docs/ROADMAP.md`. **Lots A et B terminés (étapes 0 à 6.)** Reste le lot C
+(API-Football, Understat, API REST et tableau de bord) et le lot D
+(automatisation quotidienne, déploiement, suivi de performance).
+
+## Ce qui fonctionne de bout en bout
+Import → features → entraînement → prédiction → règlement → valorisation →
+backtest. Vérifié sur les données réelles : 760 matchs importés avec leurs
+cotes Over/Under, modèle entraîné sur 2023/24, 10 160 prédictions générées et
+réglées sur 2024/25, rapport de backtest complet.
+
+## Première évaluation hors échantillon
+Modèle Dixon-Coles entraîné sur 2023/24, appliqué aux 380 matchs de 2024/25 :
+
+| Marché | Accuracy | Log-loss | Brier | AUC | ROI |
+|---|---|---|---|---|---|
+| 1N2 | 0,508 | 0,590 | 0,201 | 0,693 | −3,16 % |
+| Over/Under | 0,721 | 0,539 | 0,182 | 0,805 | −2,16 % |
+| 1N2 1re mi-temps | 0,393 | 0,621 | 0,215 | 0,609 | — |
+| BTTS | 0,518 | 0,735 | 0,266 | 0,537 | — |
+
+Références : pari naïf sur le domicile **−16,60 %**, favori du marché
+**−3,56 %**. Le modèle bat nettement la stratégie naïve et se tient au niveau
+du marché, sur une seule saison d'entraînement.
+
+Sa courbe de calibration montre un excès de confiance dans le haut du spectre
+(annoncé 0,84 → observé 0,67) : c'est ce que la calibration doit corriger, une
+fois qu'il y aura une saison de validation distincte.
 
 ## Travaux terminés
-- **Foreign keys SQLite activées** via listener SQLAlchemy sur l'événement `connect`.
-- **Cinq index non uniques** ajoutés (`migrations/20260822_add_indexes.sql`).
-- **Import historique** Football-Data.co.uk : parse, normalisation des équipes,
-  déduplication, rapport de qualité, `provider_match_id` déterministe.
-- **Pipeline de features** : calcul et persistance de deux lignes par match,
-  mapping explicite vers les colonnes du modèle `Feature`.
-- **Pipeline de prédiction** : contexte anti-fuite, assemblage des 16 marchés de
-  match entier, persistance idempotente, une transaction par match.
-- **Date de coupure** : seuls les matchs strictement postérieurs à une
-  `reference_date` fournie par l'appelant sont prédits. Le pipeline ne rejoue
-  plus tout l'historique à chaque exécution.
-- **Intégration continue** : `ruff check`, `ruff format --check` et `pytest` à
-  chaque poussée.
-- **Paquet installable** : backend de build corrigé, `pydantic-settings` et
-  `scipy` déclarés.
+- **Foreign keys SQLite**, **index déclarés dans l'ORM** et **contraintes
+  d'unicité** sur les clés logiques de `features`, `predictions`, `matches` et
+  `actual_results`.
+- **Import Football-Data** : parse, normalisation, déduplication, cotes 1N2 et
+  Over/Under 2,5 (ouverture et clôture), détection des colonnes disparues,
+  rapport de qualité horodaté.
+- **Téléchargeur** : réessais réellement opérants sur erreur transitoire,
+  écriture atomique, refus des réponses vides.
+- **Pipeline de features** : contexte incrémental, coût par match indépendant
+  de la taille de la base (~17 ms, soit ~5 min pour 20 000 matchs).
+- **Anti-fuite** : classement, Elo et repos bornés à la saison ; mouvement de
+  cote étanche par construction ; test anti-fuite par historique empoisonné et
+  mouchard de dates.
+- **Dixon-Coles** entraîné par maximum de vraisemblance, avec pondération
+  temporelle, ajusté par compétition, enregistré dans le registre des modèles.
+- **Marchés** : 31 sélections par match (match entier + première mi-temps +
+  mi-temps la plus prolifique).
+- **Règlement, valorisation, backtest, calibration** : la boucle est fermée.
+- **Intégration continue** : `ruff check`, `ruff format --check` et `pytest`.
 
-## Contenu réel de la base (`data/pronostic.db`)
-| Table | Lignes |
-|---|---|
-| `competitions` | 1 (Premier League) |
-| `seasons` | 2 (2023/24, 2024/25) |
-| `matches` | 760, du 11/08/2023 au 25/05/2025, aucun sans score |
-| `teams` | 23, sans fragmentation de noms |
-| `odds_snapshots` | 9 285, marché 1N2 uniquement |
-| `features` | 1 520 |
-| `predictions` | **0** — le pipeline n'a jamais été exécuté sur cette base |
-| `actual_results`, `xg_match_stats`, `availability` | **0** |
+## Migrations à appliquer sur la base de production
+À exécuter dans cet ordre, **après sauvegarde vérifiée** :
 
-## Défauts connus, à traiter dans l'ordre de la feuille de route
-- **C1 — fuite de données** : `odds_movement` est calculé depuis les cotes de
-  **clôture** (`B365_close`) et persisté sur 100 % des lignes de `features`. Ses
-  valeurs corrèlent avec le résultat des matchs. Interdit par `PROJECT_SPEC.md`.
-- **C2 — classement inter-saisons** : `calculate_standings` ne filtre pas par
-  saison. `league_position` monte à 23 dans un championnat à 20 équipes, et
-  Arsenal démarre 2024/25 à la 2ᵉ place avec +62 de différence de buts. Même
-  cause pour `rest_days`, qui atteint 92 jours (trêve estivale).
-- **C3 — évaluation** : le ROI du backtest est calculé contre les cotes du
-  modèle lui-même ; l'accuracy porte sur toutes les sélections sans retenir la
-  plus probable.
-- **C4 — test anti-fuite tautologique** : `tests/test_no_data_leakage.py`
-  n'exerce pas le code de production.
-- **E1 — Dixon-Coles factice** : `fit_dixon_coles` ne réalise aucune estimation.
-- **E6 — complexité quadratique** du pipeline de features.
-- Détail complet et repères `E*`, `M*`, `F*`, `N*` : voir `docs/ROADMAP.md`.
+1. `migrations/20260906_purge_odds_movement.sql` — efface les 1 520 valeurs
+   contaminées par les cotes de clôture, remet à NULL l'horodatage des cotes
+   d'ouverture. Testée sur une copie, idempotente.
+2. `migrations/20260906_add_unique_indexes.sql` — contraintes d'unicité et
+   index manquants. Vérifier d'abord l'absence de doublons (requêtes fournies
+   en tête de fichier).
+3. `migrations/20260906_add_prediction_traceability.sql` — colonnes
+   `data_cutoff_at` et `source_versions`. À n'exécuter qu'une fois.
+
+Puis **recalculer les features** (`python -m pipelines.feature_pipeline`) :
+le classement, l'Elo et les jours de repos actuellement en base ont été
+calculés avec les défauts corrigés depuis.
+
+## Prochaine action
+**Importer les 5 championnats × 11 saisons** :
+
+```bash
+cp data/pronostic.db data/backups/pronostic_avant_import_complet.db
+python scripts/import_historical_data.py
+```
+
+Le code est prêt et testé ; le réseau de l'environnement de développement
+bloque football-data.co.uk, l'import doit donc être lancé depuis votre machine.
+Le protocole de validation chronologique du cahier des charges (entraînement
+2015→2021) reste inexécutable tant que la base s'arrête à août 2023.
+
+Ensuite : `python scripts/train_models.py` puis le pipeline de prédiction.
 
 ## Blocages / données indisponibles
 - **xG** : `xg_match_stats` vide, collecteur Understat non écrit (étape 8).
 - **Blessures** : `availability` vide, collecteur API-Football non écrit (étape 7).
-- **Matchs à venir** : aucune source de calendrier, d'où l'absence de prédictions.
-- **Cotes Over/Under** : présentes dans les CSV, ignorées par le parseur (étape 3).
+- **Matchs à venir** : aucune source de calendrier, d'où l'absence de
+  prédictions sur des matchs non joués (étape 7).
+- **`odds_movement`** : restera `None` tant qu'aucune source ne fournira
+  plusieurs relevés pré-match horodatés. C'est volontaire.
 - `requirements.txt` épingle des versions inexistantes sur PyPI (numpy 2.5.2) :
   `make install` échoue. La CI installe depuis `pyproject.toml`.
+- Convention de nommage `B365_close` / `PS_close` dans la colonne `bookmaker` :
+  `is_closing` porte déjà l'information, ce doublon est à nettoyer un jour.
 
 ## Sauvegardes
 - `data/backups/pronostic_avant_import_E0_2324.db`, `pronostic_avant_import_E0_2425.db`,

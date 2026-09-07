@@ -12,6 +12,16 @@ Chaque étape se termine sur un critère vérifiable — une commande à lancer,
 nombre à constater — et non sur une impression. Les durées sont en jours de
 travail effectif, hors téléchargements et temps d'attente.
 
+## Avancement
+
+**Lots A et B terminés le 6 septembre 2026** — étapes 0 à 6. Le seul reste
+de ces lots est l'**import des ~19 000 matchs**, à lancer sur votre machine :
+le code est prêt et testé, mais le réseau de l'environnement de développement
+bloque football-data.co.uk.
+
+Reste le lot C (API-Football, Understat, application) et le lot D
+(automatisation, déploiement, suivi).
+
 ## État constaté au départ
 
 | | |
@@ -23,13 +33,13 @@ travail effectif, hors téléchargements et temps d'attente.
 
 ---
 
-## Lot A — Assainir · 3 à 5 jours
+## Lot A — Assainir · ✅ terminé
 
 Rien de ce qui suit n'a de valeur tant que les données produites sont fausses.
 Ce lot ne crée aucune fonctionnalité : il rend fiable ce qui existe déjà, et
 rapide ce qui devra encaisser vingt-cinq fois plus de données.
 
-### Étape 0 — Sécuriser le travail existant · ½ jour
+### Étape 0 — Sécuriser le travail existant · ✅ fait le 06/09/2026
 
 Le correctif `reference_date`, qui empêche le pipeline de re-prédire tout
 l'historique chaque jour, n'existait qu'en local, sans sauvegarde versionnée.
@@ -44,7 +54,7 @@ l'historique chaque jour, n'existait qu'en local, sans sauvegarde versionnée.
 **Fait quand** — CI verte sur la branche · `pytest -q` vert sur un clone neuf,
 sans base de production.
 
-### Étape 1 — Purger les défauts qui corrompent les données · 1 à 2 jours · bloquant
+### Étape 1 — Purger les défauts qui corrompent les données · ✅ fait le 06/09/2026
 
 Trois colonnes de `features` sont inexploitables : deux fausses, une contaminée.
 Charger davantage de données avant ce correctif ne fait que multiplier les
@@ -60,7 +70,7 @@ lignes à jeter.
 **Fait quand** — test anti-fuite au vert · `MAX(league_position) <= 20` ·
 `odds_movement IS NULL` partout · somme des probabilités 1N2 = 1 ± 1e-9.
 
-### Étape 2 — Rendre le calcul de features linéaire · 1 à 2 jours
+### Étape 2 — Rendre le calcul de features linéaire · ✅ fait le 06/09/2026
 
 Le pipeline rejoue toute la boucle Elo et tout le classement pour chaque match,
 deux fois. À 760 matchs il passe ; à 19 000, il ne finira pas (`E6`).
@@ -74,12 +84,12 @@ inférieure à 5 minutes pour 20 000 matchs.
 
 ---
 
-## Lot B — Construire le moteur · 7 à 11 jours
+## Lot B — Construire le moteur · ✅ terminé (import des 19 000 matchs restant à lancer)
 
 Le corpus, puis un vrai modèle, puis tous les marchés de la Phase 1, puis une
 évaluation qui veut dire quelque chose.
 
-### Étape 3 — Constituer le corpus historique · ½ jour
+### Étape 3 — Constituer le corpus historique · ⚠️ code fait, import à lancer
 
 Environ 19 000 matchs sont à un téléchargement gratuit, avec leurs cotes de
 clôture. Le protocole de validation chronologique de la spec (entraînement
@@ -95,7 +105,7 @@ août 2023.
 **Fait quand** — ≈ 19 000 matchs · 5 compétitions · cotes O/U en base · rapport
 de qualité archivé.
 
-### Étape 4 — Le moteur de buts, pour de vrai · 3 à 5 jours
+### Étape 4 — Le moteur de buts, pour de vrai · ✅ fait le 06/09/2026
 
 L'actuel `fit_dixon_coles` n'entraîne rien : il renvoie deux moyennes globales
 et un rho heuristique. La log-vraisemblance et `scipy.optimize` sont écrits mais
@@ -110,7 +120,7 @@ jamais appelés (`E1`).
 **Fait quand** — Dixon-Coles entraîné sur 2015→2021 · log-loss et Brier comparés
 au Poisson sur la saison de validation · modèle enregistré et rechargeable.
 
-### Étape 5 — Compléter les marchés de la Phase 1 · 1 à 2 jours
+### Étape 5 — Compléter les marchés de la Phase 1 · ✅ fait le 06/09/2026
 
 Les marchés de mi-temps sont dérivables mais ne sont ni assemblés ni
 persistables : `persist_predictions` les rejetterait. Le README les annonce
@@ -124,7 +134,7 @@ pourtant comme livrés (`E3`).
 **Fait quand** — ≈ 30 sélections persistées par match au lieu de 16 · README
 aligné sur le réel.
 
-### Étape 6 — Boucler la boucle : résultats et évaluation · 2 à 3 jours
+### Étape 6 — Boucler la boucle : résultats et évaluation · ✅ fait le 06/09/2026
 
 La table `actual_results` n'est écrite nulle part et le ROI est calculé contre
 les cotes du modèle lui-même — une tautologie. Sans cette étape, aucune des onze
