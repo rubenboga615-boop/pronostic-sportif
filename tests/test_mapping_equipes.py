@@ -153,6 +153,61 @@ class TestCoherenceDuRegistre:
         assert charger_registre().verifier() == []
 
 
+class TestRegistreCommite:
+    """Ce que le registre livré doit garantir, une fois relu et fusionné."""
+
+    def test_le_bloc_lisez_moi_survit_a_une_fusion(self, tmp_path, monkeypatch):
+        """La consigne de relecture ne doit pas être effacée par l'outil même
+        qui l'applique. Elle a disparu une première fois le 07/09/2026."""
+        import scripts.generer_correspondances as generateur
+
+        fichier = tmp_path / "equipes.json"
+        fichier.write_text(
+            json.dumps({"_lisez_moi": ["décision relue"], "correspondances": {}}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(generateur, "FICHIER_PAR_DEFAUT", fichier)
+        monkeypatch.setattr(generateur, "charger_registre", lambda: RegistreCorrespondances({}))
+
+        proposition = tmp_path / "relu.json"
+        proposition.write_text(
+            json.dumps(
+                {
+                    "fournisseur": "understat",
+                    "ligue": "E0",
+                    "correspondances": {"Leeds": "Leeds United"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        generateur.fusionner([proposition])
+
+        apres = json.loads(fichier.read_text(encoding="utf-8"))
+        assert apres["_lisez_moi"] == ["décision relue"]
+        assert apres["correspondances"]["understat"]["E0"]["Leeds"] == "Leeds United"
+
+    def test_les_correspondances_understat_livrees_sont_coherentes(self):
+        """Chaque cible doit être un nom canonique réel de sa ligue."""
+        registre = charger_registre()
+
+        assert registre.verifier() == []
+
+    def test_les_deux_ajaccio_ne_sont_pas_confondus(self):
+        """Gazélec Ajaccio et AC Ajaccio ont tous deux joué en Ligue 1.
+
+        Le générateur propose GFC Ajaccio -> Ajaccio avec un score de 1,0.
+        C'est faux, et c'est le genre d'erreur que rien ne signalerait ensuite.
+        """
+        registre = charger_registre()
+
+        ac = registre.canonique("understat", "F1", "Ajaccio")
+        gazelec = registre.canonique("understat", "F1", "GFC Ajaccio")
+
+        assert ac != gazelec, "les deux Ajaccio ont été fusionnés"
+        assert ac == "Ajaccio"
+        assert gazelec == "Gazelec Ajaccio"
+
+
 class TestNormalisation:
     @pytest.mark.parametrize(
         ("brut", "attendu"),

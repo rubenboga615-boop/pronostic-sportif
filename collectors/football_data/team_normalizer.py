@@ -120,6 +120,14 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Valencia": "Valencia",
         "Valladolid": "Real Valladolid",
         "Villarreal": "Villarreal",
+        # Ajoutés le 07/09/2026 : clubs d'Understat sans nom canonique.
+        "Alaves": "Alaves",
+        "Almeria": "Almeria",
+        "Cadiz": "Cadiz",
+        "Cordoba": "Cordoba",
+        "Elche": "Elche",
+        "Vallecano": "Rayo Vallecano",
+        "Rayo Vallecano": "Rayo Vallecano",
     },
     "I1": {
         "AC Milan": "AC Milan",
@@ -157,6 +165,11 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Venezia": "Venezia",
         "Salernitana": "Salernitana",
         "Monza": "Monza",
+        # Ajoutés le 07/09/2026 : clubs d'Understat sans nom canonique.
+        "Carpi": "Carpi",
+        "Cesena": "Cesena",
+        "Como": "Como",
+        "Cremonese": "Cremonese",
     },
     "D1": {
         "Bayern Munich": "Bayern Munich",
@@ -205,6 +218,15 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "St. Pauli": "St. Pauli",
         "Bochum": "Bochum",
         "VfL Bochum": "Bochum",
+        # Ajoutés le 07/09/2026 : clubs d'Understat sans nom canonique.
+        "Bielefeld": "Arminia Bielefeld",
+        "Arminia Bielefeld": "Arminia Bielefeld",
+        "Fortuna Dusseldorf": "Fortuna Dusseldorf",
+        "Greuther Furth": "Greuther Furth",
+        "Holstein Kiel": "Holstein Kiel",
+        "Ingolstadt": "Ingolstadt",
+        "Nurnberg": "Nurnberg",
+        "Paderborn": "Paderborn",
     },
     "F1": {
         "Paris Saint-Germain": "Paris Saint-Germain",
@@ -257,6 +279,17 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Clermont Foot": "Clermont",
         "Ajaccio": "Ajaccio",
         "AC Ajaccio": "Ajaccio",
+        # Ajoutés le 07/09/2026 : clubs d'Understat sans nom canonique.
+        # Gazelec Ajaccio est un club DISTINCT de l'AC Ajaccio ; les deux
+        # ont joué en Ligue 1. Les confondre scinderait deux historiques.
+        "Ajaccio GFCO": "Gazelec Ajaccio",
+        "Angers": "Angers",
+        "Bastia": "Bastia",
+        "Caen": "Caen",
+        "Evian Thonon Gaillard": "Evian Thonon Gaillard",
+        "Nancy": "Nancy",
+        "Nimes": "Nimes",
+        "Troyes": "Troyes",
     },
 }
 

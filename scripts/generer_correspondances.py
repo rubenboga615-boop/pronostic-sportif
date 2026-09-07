@@ -120,14 +120,17 @@ def fusionner(fichiers: list[Path]) -> None:
     if anomalies:
         raise ValueError("Fusion refusée, registre incohérent :\n  " + "\n  ".join(anomalies))
 
+    # Réécrire le fichier en préservant ce qui ne relève pas des correspondances
+    # — notamment le bloc `_lisez_moi`, qui rappelle que ce fichier est une
+    # décision relue et non une donnée calculée. L'écraser à chaque fusion
+    # reviendrait à effacer la consigne au moment précis où elle s'applique.
+    donnees = {}
+    if FICHIER_PAR_DEFAUT.exists():
+        donnees = json.loads(FICHIER_PAR_DEFAUT.read_text(encoding="utf-8"))
+    donnees["correspondances"] = registre.correspondances
+
     FICHIER_PAR_DEFAUT.write_text(
-        json.dumps(
-            {"correspondances": registre.correspondances},
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
+        json.dumps(donnees, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     logger.info(f"{ajouts} correspondances fusionnées dans {FICHIER_PAR_DEFAUT}")

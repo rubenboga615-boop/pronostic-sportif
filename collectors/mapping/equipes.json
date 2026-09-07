@@ -5,15 +5,60 @@
     "a été vérifiée par un humain. Ne le modifiez pas à la main sans raison ;",
     "utilisez scripts/generer_correspondances.py, qui propose puis fusionne.",
     "",
-    "Il est vide tant que les listes de noms des fournisseurs n'ont pas été",
-    "récupérées — voir scripts/sonde_api_football.py. Vide, la résolution",
-    "stricte fonctionne déjà sur les noms qui coïncident avec les noms",
-    "canoniques, et lève sur tous les autres. C'est le comportement voulu :",
-    "un import qui refuse de démarrer vaut mieux qu'un import qui réussit en",
-    "dupliquant Manchester United."
+    "Les correspondances understat ont été relues le 07/09/2026 depuis les noms",
+    "de game_stats.csv. Quatre propositions du générateur ont été REJETÉES car",
+    "elles confondaient des clubs distincts : Almeria/Valencia, Rayo Vallecano/",
+    "Real Valladolid, Carpi/Cagliari, Cremonese/Crotone, Angers/Nantes,",
+    "Caen/Amiens, Nimes/Nice — et surtout GFC Ajaccio (Gazélec) proposé à 1,0",
+    "vers Ajaccio (AC Ajaccio), qui sont deux clubs différents."
   ],
   "correspondances": {
     "api_football": {},
-    "understat": {}
+    "understat": {
+      "D1": {
+        "Borussia M.Gladbach": "Borussia Monchengladbach",
+        "FC Cologne": "Koln",
+        "FC Heidenheim": "Heidenheim",
+        "Fortuna Duesseldorf": "Fortuna Dusseldorf",
+        "Greuther Fuerth": "Greuther Furth",
+        "Hamburger SV": "Hamburg",
+        "Mainz 05": "Mainz",
+        "Nuernberg": "Nurnberg",
+        "RasenBallsport Leipzig": "RB Leipzig",
+        "VfB Stuttgart": "Stuttgart"
+      },
+      "E0": {
+        "Bournemouth": "AFC Bournemouth",
+        "Brighton": "Brighton & Hove Albion",
+        "Cardiff": "Cardiff City",
+        "Huddersfield": "Huddersfield Town",
+        "Hull": "Hull City",
+        "Ipswich": "Ipswich Town",
+        "Leeds": "Leeds United",
+        "Leicester": "Leicester City",
+        "Luton": "Luton Town",
+        "Manchester United": "Manchester Utd",
+        "Newcastle United": "Newcastle Utd",
+        "Norwich": "Norwich City",
+        "Stoke": "Stoke City",
+        "Swansea": "Swansea City",
+        "Wolverhampton Wanderers": "Wolverhampton"
+      },
+      "F1": {
+        "Clermont Foot": "Clermont",
+        "GFC Ajaccio": "Gazelec Ajaccio",
+        "SC Bastia": "Bastia"
+      },
+      "I1": {
+        "Chievo": "Chievo Verona",
+        "Inter": "Inter Milan",
+        "Parma Calcio 1913": "Parma",
+        "SPAL 2013": "SPAL"
+      },
+      "SP1": {
+        "Athletic Club": "Athletic Bilbao",
+        "SD Huesca": "Huesca"
+      }
+    }
   }
 }
