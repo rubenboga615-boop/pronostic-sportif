@@ -413,6 +413,101 @@ class TestBacktest:
         assert "erreur" in run_backtest(pd.DataFrame())
 
 
+class TestAucParGroupe:
+    """Une AUC ne se compare pas d'un marché à l'autre.
+
+    L'AUC d'un événement binaire dépend de sa fréquence de réalisation : plus
+    elle s'écarte de 50 %, plus il est facile de bien classer. Mesuré par
+    simulation depuis un modèle parfaitement spécifié — donc au plafond
+    atteignable — over/under 0,5 plafonne à 0,930, over/under 2,5 à 0,635 et le
+    BTTS à 0,606.
+
+    C'est ce qui faisait paraître l'over/under (0,805, huit sélections
+    confondues, plafond 0,819) très supérieur au BTTS (0,537, plafond 0,606).
+    Le second n'était pas cassé : le premier était flatteur.
+    """
+
+    @staticmethod
+    def _deux_lignes_de_frequences_opposees():
+        """Deux lignes over/under : l'une indécidable, l'autre triviale.
+
+        Sur la ligne 2,5 le modèle annonce 0,50 partout : il n'ordonne rien, son
+        AUC vaut 0,5. Sur la ligne 0,5 l'issue est acquise et le modèle le sait :
+        son AUC vaut 1. Confondre les deux gonfle le résultat.
+        """
+        import pandas as pd
+
+        lignes = []
+        for match_id in range(20):
+            over_25_gagne = match_id % 2  # une fois sur deux
+            lignes += [
+                {
+                    "match_id": match_id,
+                    "selection": "over_2.5",
+                    "probability": 0.50,
+                    "gagnant": over_25_gagne,
+                },
+                {
+                    "match_id": match_id,
+                    "selection": "under_2.5",
+                    "probability": 0.50,
+                    "gagnant": 1 - over_25_gagne,
+                },
+                {"match_id": match_id, "selection": "over_0.5", "probability": 0.95, "gagnant": 1},
+                {"match_id": match_id, "selection": "under_0.5", "probability": 0.05, "gagnant": 0},
+            ]
+        df = pd.DataFrame(lignes)
+        df["market"] = "over_under"
+        return df
+
+    def test_le_detail_par_ligne_distingue_les_deux(self):
+        from evaluation.backtest import _auc_par_groupe
+
+        par_groupe = _auc_par_groupe(self._deux_lignes_de_frequences_opposees(), "over_under")
+
+        assert par_groupe["over_2.5 / under_2.5"] == pytest.approx(0.5)
+        assert par_groupe["over_0.5 / under_0.5"] == pytest.approx(1.0)
+
+    def test_l_auc_groupee_est_plus_flatteuse_que_la_moyenne_par_ligne(self):
+        from evaluation.backtest import _auc_moyenne_par_groupe
+        from evaluation.metrics import auc
+
+        lignes = self._deux_lignes_de_frequences_opposees()
+
+        groupee = auc(lignes["gagnant"].tolist(), lignes["probability"].tolist())
+        moyenne = _auc_moyenne_par_groupe(lignes, "over_under")
+
+        assert groupee == pytest.approx(0.875)
+        assert moyenne == pytest.approx(0.75)
+        assert groupee > moyenne
+
+    def test_les_lignes_absentes_ne_faussent_pas_la_moyenne(self):
+        """Un marché dont une seule ligne est présente reste mesurable."""
+        from evaluation.backtest import _auc_moyenne_par_groupe
+
+        lignes = self._deux_lignes_de_frequences_opposees()
+        seule = lignes[lignes["selection"].isin(["over_2.5", "under_2.5"])]
+
+        assert _auc_moyenne_par_groupe(seule, "over_under") == pytest.approx(0.5)
+
+    def test_la_double_chance_n_a_pas_d_auc(self):
+        import pandas as pd
+
+        from evaluation.backtest import _auc_moyenne_par_groupe, _auc_par_groupe
+
+        df = pd.DataFrame(
+            {
+                "market": ["double_chance"] * 2,
+                "selection": ["home_or_draw", "draw_or_away"],
+                "probability": [0.7, 0.6],
+                "gagnant": [1, 0],
+            }
+        )
+
+        assert _auc_par_groupe(df, "double_chance") is None
+        assert _auc_moyenne_par_groupe(df, "double_chance") is None
+
+
 class TestAccuracyParGroupe:
     def test_la_double_chance_n_a_pas_d_accuracy(self):
         import pandas as pd

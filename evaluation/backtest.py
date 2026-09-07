@@ -111,6 +111,45 @@ def evaluer_marche(df: pd.DataFrame, marche: str) -> dict[str, Any]:
     c'est ce que « prédire » veut dire. Les métriques probabilistes, elles,
     portent sur toutes les sélections, chacune traitée comme un événement
     binaire.
+
+    **Une AUC ne se compare pas d'un marché à l'autre.** C'est le principal
+    enseignement du diagnostic mené sur le BTTS, et il change la lecture des
+    résultats.
+
+    L'AUC d'un événement binaire dépend fortement de sa fréquence de
+    réalisation : plus elle s'éloigne de 50 %, plus il est facile de bien
+    classer. Mesuré par simulation depuis un modèle **parfaitement spécifié**
+    — les matchs sont tirés depuis lui, l'AUC obtenue est donc le plafond
+    atteignable, aucun modèle ne peut faire mieux :
+
+    ====================================  ==========  ================
+    Marché                                Plafond     Fréquence
+    ====================================  ==========  ================
+    Over/Under 0,5                          0,930     over 91 %
+    Over/Under 1,5                          0,774     over 72 %
+    Over/Under 2,5                          0,635     over 47 %
+    Over/Under 3,5                          0,789     over 27 %
+    Over/Under, 8 sélections confondues     0,819     —
+    Over/Under, moyenne par ligne           0,782     —
+    BTTS                                    0,606     ~52 %
+    ====================================  ==========  ================
+
+    D'où la conclusion, contre-intuitive : le **0,805 mesuré en over/under
+    n'était pas un bon résultat**, il frôlait le plafond d'une métrique
+    flatteuse ; et le **0,537 du BTTS n'a rien d'anormal** face à son propre
+    plafond de 0,606. Le BTTS est simplement le marché le plus dur des trois,
+    parce que sa fréquence est proche de 50 % et qu'il dépend de l'équilibre
+    entre les deux λ — ce que le modèle estime le moins bien.
+
+    Trois valeurs sont donc publiées :
+
+    - ``auc`` — moyenne pondérée **par groupe exclusif**, comparable dans le
+      temps sur un même marché ;
+    - ``auc_par_groupe`` — le détail ligne par ligne, seul réellement
+      interprétable ;
+    - ``auc_toutes_selections`` — la valeur groupée, conservée pour la
+      continuité des rapports antérieurs. **À ne jamais comparer entre marchés
+      de nombres de groupes différents.**
     """
     lignes = df[df["market"] == marche]
     if lignes.empty:
@@ -126,7 +165,9 @@ def evaluer_marche(df: pd.DataFrame, marche: str) -> dict[str, Any]:
         "accuracy": _accuracy_par_groupe(lignes, marche),
         "log_loss": log_loss(y_true_binaire, y_prob),
         "brier": brier_score(y_true_binaire, y_prob),
-        "auc": auc(y_true_binaire, y_prob),
+        "auc": _auc_moyenne_par_groupe(lignes, marche),
+        "auc_par_groupe": _auc_par_groupe(lignes, marche),
+        "auc_toutes_selections": auc(y_true_binaire, y_prob),
         "erreur_de_calibration": erreur_de_calibration(y_true_binaire, y_prob),
         "courbe_de_calibration": [
             {"annoncee": p, "observee": o, "effectif": n}
@@ -163,6 +204,52 @@ def _accuracy_par_groupe(lignes: pd.DataFrame, marche: str) -> float | None:
             predits.append(predit[match_id])
 
     return accuracy(attendus, predits) if attendus else None
+
+
+def _auc_par_groupe(lignes: pd.DataFrame, marche: str) -> dict[str, float] | None:
+    """AUC de chaque groupe de sélections exclusives, séparément.
+
+    Un groupe — une ligne over/under, le triplet 1N2 — partage une même
+    fréquence de réalisation. L'AUC y mesure un pouvoir de classement réel, et
+    non l'écart de fréquence entre deux lignes.
+
+    Retourne ``None`` pour un marché sans partition, la double chance, comme
+    :func:`_accuracy_par_groupe`.
+    """
+    groupes = GROUPES_EXCLUSIFS.get(marche, ())
+    if not groupes:
+        return None
+
+    resultats: dict[str, float] = {}
+    for groupe in groupes:
+        sous_ensemble = lignes[lignes["selection"].isin(groupe)]
+        if sous_ensemble.empty:
+            continue
+        issues = sous_ensemble["gagnant"].tolist()
+        if len(set(issues)) < 2:
+            continue  # une seule issue observée : l'AUC n'est pas définie
+        resultats[" / ".join(groupe)] = auc(issues, sous_ensemble["probability"].tolist())
+
+    return resultats or None
+
+
+def _auc_moyenne_par_groupe(lignes: pd.DataFrame, marche: str) -> float | None:
+    """Moyenne des AUC par groupe, pondérée par l'effectif de chaque groupe."""
+    par_groupe = _auc_par_groupe(lignes, marche)
+    if not par_groupe:
+        return None
+
+    total = 0.0
+    effectif = 0
+    for groupe in GROUPES_EXCLUSIFS.get(marche, ()):
+        cle = " / ".join(groupe)
+        if cle not in par_groupe:
+            continue
+        n = len(lignes[lignes["selection"].isin(groupe)])
+        total += par_groupe[cle] * n
+        effectif += n
+
+    return total / effectif if effectif else None
 
 
 def _rendements(lignes: pd.DataFrame, edge_minimal: float = 0.0) -> dict[str, Any]:
