@@ -1,10 +1,21 @@
-"""Configuration des championnats."""
+"""Configuration des championnats.
+
+Douze saisons, de 2014/15 à 2025/26 — la dernière terminée.
+
+2014/15 est une **saison de chauffe** : elle est importée mais exclue de
+l'entraînement. Sans elle, 2015/16 servirait de rodage à ses propres features —
+Elo encore à sa valeur initiale, historique de forme vide, classement partiel —
+et la première saison d'entraînement serait la moins bien décrite de toutes.
+C'est aussi la première saison couverte par Understat, ce qui alignera les deux
+sources quand le xG arrivera.
+"""
 
 LEAGUE_CONFIG = {
     "E0": {
         "name": "Premier League",
         "country": "England",
         "seasons_available": [
+            "1415",
             "1516",
             "1617",
             "1718",
@@ -22,6 +33,7 @@ LEAGUE_CONFIG = {
         "name": "La Liga",
         "country": "Spain",
         "seasons_available": [
+            "1415",
             "1516",
             "1617",
             "1718",
@@ -39,6 +51,7 @@ LEAGUE_CONFIG = {
         "name": "Serie A",
         "country": "Italy",
         "seasons_available": [
+            "1415",
             "1516",
             "1617",
             "1718",
@@ -56,6 +69,7 @@ LEAGUE_CONFIG = {
         "name": "Bundesliga",
         "country": "Germany",
         "seasons_available": [
+            "1415",
             "1516",
             "1617",
             "1718",
@@ -73,6 +87,7 @@ LEAGUE_CONFIG = {
         "name": "Ligue 1",
         "country": "France",
         "seasons_available": [
+            "1415",
             "1516",
             "1617",
             "1718",

@@ -5,9 +5,14 @@ Découpage chronologique conforme à `PROJECT_SPEC.md` : jamais de tirage
 aléatoire. Le modèle apprend sur le passé, se règle sur une saison de
 validation, et n'est jugé que sur des saisons qu'il n'a jamais vues.
 
+Les dates par défaut appliquent le protocole du cahier des charges :
+entraînement jusqu'à la fin de 2022/23, validation sur 2023/24, test sur
+2024/25 et 2025/26. Les déplacer expose le jeu de test ; ne le faire que
+délibérément, et le signaler dans le rapport.
+
 Usage :
     python scripts/train_models.py
-    python scripts/train_models.py --train-end 2022-06-30 --val-end 2023-06-30
+    python scripts/train_models.py --train-end 2023-06-30 --val-end 2024-06-30
     python scripts/train_models.py --version dixon-coles-2026-09
     python scripts/train_models.py --dry-run
 """
@@ -174,13 +179,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Entraîner les modèles de pronostic")
     parser.add_argument(
         "--train-end",
-        default="2022-06-30",
-        help="Dernière date incluse dans l'entraînement (défaut : 2022-06-30)",
+        default="2023-06-30",
+        help="Dernière date incluse dans l'entraînement (défaut : 2023-06-30, "
+        "fin de la saison 2022/23)",
     )
     parser.add_argument(
         "--val-end",
-        default="2023-06-30",
-        help="Dernière date incluse dans la validation (défaut : 2023-06-30)",
+        default="2024-06-30",
+        help="Dernière date incluse dans la validation (défaut : 2024-06-30, "
+        "fin de la saison 2023/24)",
     )
     parser.add_argument(
         "--version",

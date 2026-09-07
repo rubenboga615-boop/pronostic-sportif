@@ -670,13 +670,37 @@ fair_odds = 1 / probability
 Ne pas utiliser un découpage aléatoire classique. Utiliser une validation dans le temps :
 
 ```text
-Entraînement  : saisons 2015/16 à 2021/22
-Validation    : saison 2022/23
-Test          : saison 2023/24
-Test récent   : saison 2024/25
+Chauffe       : saison 2014/15            (importée, exclue de l'entraînement)
+Entraînement  : saisons 2015/16 à 2022/23  (8 saisons, ~14 500 matchs)
+Validation    : saison 2023/24             (calibration, réglage de ξ)
+Test          : saisons 2024/25 et 2025/26 (~1 300 matchs, jamais touchées)
 ```
 
-Les saisons exactes devront être ajustées selon la disponibilité des données.
+Ce découpage remplace celui de la rédaction initiale (entraînement 2015/16 à
+2021/22, validation 2022/23, test 2023/24), écrit quand 2023/24 était la
+dernière saison terminée. Il a été décalé de deux saisons en septembre 2026.
+
+Trois raisons de le fixer ainsi :
+
+- **La saison de chauffe.** Elo, forme et classement démarrent à froid. Sans
+  saison antérieure, la première saison d'entraînement est la plus mal décrite
+  de toutes. 2014/15 est importée pour cela, et pour cela seulement.
+- **Deux saisons de test, pas une.** Sur 380 matchs, l'intervalle de confiance
+  d'un rendement simulé couvre plusieurs points : un ROI de −3 % n'y est
+  distinguable ni de 0 %, ni de −8 %. Doubler l'échantillon de test resserre la
+  mesure bien plus sûrement qu'ajouter une saison à un entraînement qui en
+  compte déjà huit — la pondération temporelle du Dixon-Coles, de demi-vie
+  proche d'un an, ne « voit » de toute façon que les dernières saisons.
+- **Une saison de validation distincte.** Elle est la condition d'existence de
+  la calibration : ajuster un calibrateur sur le jeu de test reviendrait à se
+  noter sur ses propres réponses. C'est ce qui manquait jusqu'ici.
+
+Une fois le protocole passé et les métriques publiées, le modèle **de
+production** se réentraîne sur toutes les saisons disponibles, jusqu'au dernier
+match joué. Le découpage sert à mesurer, pas à brider.
+
+Les saisons exactes devront être ajustées selon la disponibilité des données —
+en décalant l'ensemble, jamais en empiétant sur le test.
 
 Pour la saison en cours, ne pas l'utiliser pour déclarer la rentabilité du modèle avant qu'elle soit terminée.
 

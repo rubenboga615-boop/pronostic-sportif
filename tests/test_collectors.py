@@ -1,6 +1,7 @@
 """Tests des collecteurs de données."""
 
 from collectors.football_data.league_config import (
+    LEAGUE_CONFIG,
     get_all_seasons,
     get_league_codes,
     get_league_name,
@@ -35,6 +36,41 @@ class TestLeagueConfig:
         assert "2425" in seasons
         assert "2526" in seasons
         assert seasons == sorted(seasons)
+
+    def test_la_saison_de_chauffe_est_configuree(self):
+        """2014/15 précède la première saison d'entraînement, et doit exister.
+
+        Sans elle, 2015/16 s'entraîne sur des features à froid : Elo à sa
+        valeur initiale, historique de forme vide, classement partiel. Elle est
+        importée puis exclue de l'entraînement — sa seule raison d'être.
+        """
+        assert "1415" in get_all_seasons()
+
+    def test_toutes_les_ligues_couvrent_le_protocole(self):
+        """Le protocole de `PROJECT_SPEC.md` doit être exécutable partout.
+
+        Chauffe 2014/15, entraînement jusqu'à 2022/23, validation 2023/24,
+        test 2024/25 et 2025/26. Une seule saison manquante dans un seul
+        championnat, et le découpage n'est plus celui qui est annoncé.
+        """
+        requises = {
+            "1415",
+            "1516",
+            "1617",
+            "1718",
+            "1819",
+            "1920",
+            "2021",
+            "2122",
+            "2223",
+            "2324",
+            "2425",
+            "2526",
+        }
+
+        for code, config in LEAGUE_CONFIG.items():
+            manquantes = requises - set(config["seasons_available"])
+            assert not manquantes, f"{code} : saisons manquantes {sorted(manquantes)}"
 
 
 class TestTeamNormalizer:
