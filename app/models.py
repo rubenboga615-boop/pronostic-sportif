@@ -205,6 +205,11 @@ class Prediction(Base):
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
     model_version = Column(String)
     generated_at = Column(DateTime, default=datetime.utcnow)
+    # Date de coupure des données ayant servi à la prédiction, et versions des
+    # sources consultées. Exigées par PROJECT_SPEC.md : sans elles, une
+    # prédiction datée ne peut pas être rejouée ni auditée.
+    data_cutoff_at = Column(DateTime)
+    source_versions = Column(String)
     market = Column(String)
     selection = Column(String)
     probability = Column(Float)

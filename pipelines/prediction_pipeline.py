@@ -1,7 +1,7 @@
 """Pipeline de génération de prédictions."""
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
@@ -16,6 +16,8 @@ def persist_predictions(
     match_id: int,
     model_version: str,
     predictions: list[dict[str, Any]],
+    data_cutoff_at=None,
+    source_versions: str | None = None,
 ) -> list[Prediction]:
     """Persister de façon idempotente les prédictions d'un match.
 
@@ -51,13 +53,19 @@ def persist_predictions(
                     selection=p["selection"],
                     probability=p["probability"],
                     fair_odds=p["fair_odds"],
+                    data_cutoff_at=data_cutoff_at,
+                    source_versions=source_versions,
                 )
                 session.add(obj)
                 results.append(obj)
             else:
                 existing.probability = p["probability"]
                 existing.fair_odds = p["fair_odds"]
-                existing.generated_at = datetime.utcnow()
+                existing.generated_at = datetime.now(UTC)
+                if data_cutoff_at is not None:
+                    existing.data_cutoff_at = data_cutoff_at
+                if source_versions is not None:
+                    existing.source_versions = source_versions
                 results.append(existing)
         session.commit()
         return results
@@ -115,6 +123,8 @@ def generate_match_predictions(
     model_version: str = "poisson-v1",
     model=None,
     half_models=None,
+    data_cutoff_at=None,
+    source_versions: str | None = None,
 ) -> list[Prediction]:
     """Générer et persister les prédictions d'un match (anti-fuite, idempotent).
 
@@ -123,7 +133,14 @@ def generate_match_predictions(
     à jour les lignes existantes sans créer de doublon.
     """
     predictions = build_match_predictions(session, match_id, model=model, half_models=half_models)
-    return persist_predictions(session, match_id, model_version, predictions)
+    return persist_predictions(
+        session,
+        match_id,
+        model_version,
+        predictions,
+        data_cutoff_at=data_cutoff_at,
+        source_versions=source_versions,
+    )
 
 
 def generate_predictions_for_matches(
@@ -132,6 +149,8 @@ def generate_predictions_for_matches(
     model_version: str = "poisson-v1",
     model=None,
     half_models=None,
+    data_cutoff_at=None,
+    source_versions: str | None = None,
 ) -> dict[str, Any]:
     """Générer et persister les prédictions pour une liste explicite de matchs.
 
@@ -158,7 +177,13 @@ def generate_predictions_for_matches(
     for match_id in match_ids:
         try:
             results = generate_match_predictions(
-                session, match_id, model_version, model=model, half_models=half_models
+                session,
+                match_id,
+                model_version,
+                model=model,
+                half_models=half_models,
+                data_cutoff_at=data_cutoff_at,
+                source_versions=source_versions,
             )
             succeeded.append(match_id)
             total_predictions += len(results)
@@ -264,6 +289,8 @@ def run_prediction_pipeline(
     reference_date,
     model=None,
     half_models=None,
+    data_cutoff_at=None,
+    source_versions: str | None = None,
 ) -> dict[str, Any]:
     """Exécuter le pipeline de prédiction.
 
@@ -330,7 +357,12 @@ def run_prediction_pipeline(
         # Étape 2 : Génération des prédictions
         logger.info("Étape 2 : Génération des prédictions...")
         report = generate_predictions_for_matches(
-            session, match_ids, model_version, model=model, half_models=half_models
+            session,
+            match_ids,
+            model_version,
+            model=model,
+            half_models=half_models,
+            data_cutoff_at=reference_date,
         )
 
         logger.info(

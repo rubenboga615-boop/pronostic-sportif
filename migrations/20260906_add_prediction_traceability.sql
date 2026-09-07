@@ -1,0 +1,43 @@
+-- Migration : traçabilité des prédictions (2026-09-06)
+--
+-- ⚠️ SAUVEGARDE OBLIGATOIRE AVANT EXÉCUTION.
+--     cp data/pronostic.db data/backups/pronostic_avant_tracabilite.db
+--     sqlite3 data/backups/pronostic_avant_tracabilite.db "PRAGMA integrity_check;"
+--
+-- Contexte
+-- --------
+-- PROJECT_SPEC.md exige que chaque prédiction porte :
+--
+--     generated_at, model_version, data_cutoff_at, source_versions
+--
+-- Les deux premières existaient ; les deux autres n'ont jamais été créées.
+-- Sans elles, il est impossible de dire avec quelles données une prédiction
+-- datée a été produite, donc impossible de la rejouer ou de l'auditer.
+--
+--   data_cutoff_at   : date de coupure des données ayant servi à prédire.
+--                      Renseignée par le pipeline avec sa `reference_date`.
+--   source_versions  : versions des sources consultées, en texte libre
+--                      (JSON recommandé), pour tracer d'où venaient les
+--                      données ce jour-là.
+--
+-- SQLite accepte ADD COLUMN sans reconstruire la table. Les prédictions
+-- existantes gardent NULL : leur date de coupure n'est pas reconstructible,
+-- et inventer une valeur serait pire que l'absence.
+--
+-- Sens aller (UP) — à n'exécuter qu'une fois : SQLite ne connaît pas
+-- « ADD COLUMN IF NOT EXISTS ». Vérifier au préalable :
+--
+--   SELECT COUNT(*) FROM pragma_table_info('predictions')
+--    WHERE name IN ('data_cutoff_at', 'source_versions');
+--
+-- Si la requête retourne 2, la migration est déjà appliquée.
+
+ALTER TABLE predictions ADD COLUMN data_cutoff_at DATETIME;
+ALTER TABLE predictions ADD COLUMN source_versions VARCHAR;
+
+-- Sens retour (DOWN)
+-- ------------------
+-- SQLite gère DROP COLUMN depuis la version 3.35 :
+--   ALTER TABLE predictions DROP COLUMN data_cutoff_at;
+--   ALTER TABLE predictions DROP COLUMN source_versions;
+-- Sur une version antérieure, restaurer la sauvegarde.

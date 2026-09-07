@@ -70,6 +70,27 @@ PUBLIC_SELECTIONS: dict[str, frozenset[str]] = {
     "most_productive_half": frozenset({"first_half", "second_half", "equal"}),
 }
 
+# Groupes de sélections mutuellement exclusives et exhaustives : exactement une
+# gagne, et leurs probabilités somment à 1.
+#
+# La distinction n'est pas cosmétique. Une accuracy n'a de sens que sur un tel
+# groupe : sur les quatre lignes d'un Over/Under, retenir « la sélection la plus
+# probable du marché » désigne toujours over_0.5, et sur une double chance, deux
+# sélections sur trois gagnent à chaque match. La normalisation de la marge d'un
+# bookmaker suit exactement la même règle.
+GROUPES_EXCLUSIFS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "1N2": (("home", "draw", "away"),),
+    "1N2_1H": (("home", "draw", "away"),),
+    "BTTS": (("yes", "no"),),
+    "most_productive_half": (("first_half", "second_half", "equal"),),
+    "over_under": tuple((f"over_{ligne}", f"under_{ligne}") for ligne in OVER_UNDER_LINES),
+    "over_under_1H": tuple((f"over_{ligne}", f"under_{ligne}") for ligne in FIRST_HALF_LINES),
+    # Double chance : deux sélections sur trois gagnent à chaque match. Aucun
+    # partitionnement possible, donc aucune accuracy définie.
+    "double_chance": (),
+    "double_chance_1H": (),
+}
+
 # Marchés de mi-temps : nom interne -> nom public.
 MARKET_TO_PUBLIC_1H: dict[str, str] = {
     "1n2": "1N2_1H",
