@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "Moteur probabiliste de pronostic football"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.12"
+# 3.11 est le minimum réel : le code emploie `datetime.UTC` et `tomllib`,
+# apparus en 3.11, mais rien de propre à 3.12. Exiger 3.12 fermait la porte
+# à des environnements parfaitement capables — un proot Ubuntu sur Android,
+# par exemple. L'intégration continue vérifie les deux versions.
+requires-python = ">=3.11"
 # Noyau : tout ce qu'il faut pour importer, calculer les features, entraîner,
 # prédire, régler et évaluer. Rien de plus.
 #
@@ -66,14 +70,14 @@ scraping = [
 include = ["app*", "collectors*", "evaluation*", "features*", "models*", "pipelines*"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 
 [tool.pytest.ini_options]

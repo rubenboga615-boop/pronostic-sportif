@@ -15,9 +15,16 @@ concurrency:
 
 jobs:
   qualite:
-    name: Tests et style
+    name: Tests et style (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 est le minimum déclaré, 3.12 la version de référence. Vérifier
+        # les deux évite de laisser filer une syntaxe qui fermerait la porte
+        # aux environnements restés en 3.11.
+        python: ["3.11", "3.12"]
 
     steps:
       - name: Récupérer le dépôt
@@ -26,7 +33,7 @@ jobs:
       - name: Installer Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
 
       - name: Installer les dépendances
