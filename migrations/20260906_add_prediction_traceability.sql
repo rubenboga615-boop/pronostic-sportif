@@ -32,8 +32,12 @@
 --
 -- Si la requête retourne 2, la migration est déjà appliquée.
 
+BEGIN TRANSACTION;
+
 ALTER TABLE predictions ADD COLUMN data_cutoff_at DATETIME;
 ALTER TABLE predictions ADD COLUMN source_versions VARCHAR;
+
+COMMIT;
 
 -- Sens retour (DOWN)
 -- ------------------

@@ -7,13 +7,15 @@ from loguru import logger
 
 from app.database import SessionLocal
 from app.models import Feature
+from features.comparable_teams import calculate_opponent_strength
 from features.context import FeatureContext, build_context
 from features.elo import DEFAULT_ELO, regress_towards_mean, update_elo
 from features.form import calculate_form_features
+from features.half_time import calculate_half_time_features
 from features.home_away import calculate_home_away_features
 from features.mapping import map_features_to_columns
 from features.odds_movement import calculate_odds_movement
-from features.rest_days import calculate_rest_features
+from features.rest_days import calculate_congestion_features, calculate_rest_features
 from features.shots import calculate_shots_features
 from features.standings import get_team_position
 
@@ -34,7 +36,8 @@ def run_feature_pipeline() -> dict[str, int]:
     try:
         matches_df = pd.read_sql_query(
             "SELECT id, competition_id, season_id, match_date, home_team_id, away_team_id, "
-            "home_goals, away_goals, home_shots, away_shots, "
+            "home_goals, away_goals, home_ht_goals, away_ht_goals, "
+            "home_shots, away_shots, "
             "home_shots_on_target, away_shots_on_target "
             "FROM matches ORDER BY match_date, id",
             session.get_bind(),
@@ -99,7 +102,8 @@ def compute_match_features(
     - ``odds_movement`` est calculé par sélection (``home``/``away``) selon le côté,
       en n'observant que des cotes capturées avant le coup d'envoi ;
     - ``goal_difference`` n'est fourni que s'il est disponible avant le match ;
-    - ``opponent_strength``, ``xg_*`` et ``injury_impact`` restent ``None``.
+    - ``xg_*`` et ``injury_impact`` restent ``None`` faute de source ;
+      ``opponent_strength`` est désormais renseignée.
     """
     match_date = pd.Timestamp(match["match_date"])
     home_id = int(match["home_team_id"])
@@ -118,6 +122,13 @@ def compute_match_features(
 
     # Grandeurs partagées, lues une seule fois dans le contexte.
     rest = calculate_rest_features(
+        context.historique_equipes(home_id, away_id),
+        home_id,
+        away_id,
+        match_date,
+        season_id=season_id,
+    )
+    congestion = calculate_congestion_features(
         context.historique_equipes(home_id, away_id),
         home_id,
         away_id,
@@ -147,6 +158,7 @@ def compute_match_features(
             "rest_days_difference": rest["rest_days_difference"],
             "home_elo": elo_home,
             "away_elo": elo_away,
+            **congestion,
             # par équipe.
             **calculate_form_features(historique, team_id, match_date, windows=[5, 10]),
             # NB : calculate_goals_features est volontairement écarté : ses
@@ -157,6 +169,17 @@ def compute_match_features(
             # sans colonne Feature dédiée). Conservé tel quel par décision.
             **calculate_home_away_features(historique, team_id, match_date, window=10),
             **calculate_shots_features(historique, team_id, match_date, window=5),
+            # Première mi-temps : quinze des trente et une sélections en
+            # dépendent, et rien ne la décrivait jusqu'ici.
+            **calculate_half_time_features(historique, team_id, match_date, season_id=season_id),
+            # Force du calendrier déjà joué, mesurée par l'Elo courant des
+            # adversaires — tous rencontrés avant la date cible.
+            **calculate_opponent_strength(
+                historique,
+                team_id,
+                match_date,
+                lambda tid: context.elo(tid, season_id),
+            ),
             "league_position": get_team_position(standings, team_id),
             "goal_difference": _goal_difference(standings, team_id),
         }

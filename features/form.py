@@ -42,6 +42,7 @@ def calculate_form_features(
         wins = draws = losses = 0
         gf = ga = 0
         clean_sheets = 0
+        failed_to_score = 0
         notes = 0  # matchs effectivement pourvus d'un score
 
         for _, match in recent.iterrows():
@@ -68,12 +69,17 @@ def calculate_form_features(
 
             if mga == 0:
                 clean_sheets += 1
+            if mgf == 0:
+                failed_to_score += 1
 
         features[f"form_points_{window}"] = points
         features[f"form_wins_{window}"] = wins
         features[f"form_draws_{window}"] = draws
         features[f"form_losses_{window}"] = losses
         features[f"clean_sheets_{window}"] = clean_sheets
+        # Pendant du clean sheet, et l'autre moitié du BTTS : une équipe qui ne
+        # marque pas rend le « les deux équipes marquent » impossible.
+        features[f"failed_to_score_{window}"] = failed_to_score
         # Diviser par la taille de la fenêtre compterait les matchs sans score
         # comme des 0-0 : une équipe dont un seul match sur cinq est renseigné
         # verrait sa moyenne divisée par cinq. Sans aucun match noté, la

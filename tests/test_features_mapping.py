@@ -64,26 +64,108 @@ class TestMapping:
         assert mapped["injury_impact"] is None
 
     def test_no_silent_valid_substitution(self):
-        """Une colonne sans source ne doit pas être remplacée par une valeur valide."""
+        """Une variable sans source ne doit pas être remplacée par une valeur valide."""
         mapped = map_features_to_columns({})
-        assert mapped["data_completeness"] is None
-        assert mapped["opponent_strength"] is None
+
+        for colonne in (
+            "opponent_strength",
+            "xg_avg_5",
+            "injury_impact",
+            "ht_draw_rate",
+            "ht_over_25_rate",
+            "clean_sheets_5",
+            "rest_days_diff",
+        ):
+            assert mapped[colonne] is None, colonne
+
+    def test_data_completeness_est_une_mesure_pas_une_substitution(self):
+        """Seule exception à la règle : elle décrit la ligne, pas l'équipe.
+
+        `data_completeness` ne dit rien du football. Elle dit quelle part des
+        colonnes a pu être renseignée — 0 sur une ligne vide est une information
+        vraie, et c'est ce qui permettra de distinguer une prédiction bien
+        fondée d'une prédiction faite à l'aveugle.
+        """
+        assert map_features_to_columns({})["data_completeness"] == pytest.approx(0.0)
+
+        garnie = map_features_to_columns(
+            {"form_points_5": 9, "goals_for_avg_5": 1.6, "home_elo": 1510.0}
+        )
+        assert 0.0 < garnie["data_completeness"] < 1.0
 
     def test_unmapped_keys_are_not_persisted(self):
         """Les sorties sans colonne dédiée ne doivent pas fuiter dans le mapping."""
         raw = {
             "form_wins_5": 2,
-            "clean_sheets_5": 1,
+            "goals_for_avg_10": 1.4,
             "rest_days_difference": 2,
             "home_elo": 1510.0,
             "comparable_teams": [11, 1, 3],
         }
         mapped = map_features_to_columns(raw)
+
+        # Ces clés n'ont pas de colonne : elles sont ignorées, pas persistées.
         assert "form_wins_5" not in mapped
-        assert "clean_sheets_5" not in mapped
+        assert "goals_for_avg_10" not in mapped
+        assert "comparable_teams" not in mapped
+        # Les clés brutes ne fuitent pas non plus quand la colonne porte un
+        # autre nom : rest_days_difference alimente rest_days_diff.
         assert "rest_days_difference" not in mapped
         assert "home_elo" not in mapped
-        assert "comparable_teams" not in mapped
+
+    def test_les_quatre_colonnes_autrefois_orphelines_sont_alimentees(self):
+        """Aucune colonne du schéma ne doit rester sans écrivain.
+
+        `home_away_goals_*`, `opponent_strength` et `data_completeness` étaient
+        déclarées au modèle et qu'aucun code n'écrivait : elles restaient nulles
+        sur toute la base, en laissant croire à une donnée existante.
+        """
+        raw = {
+            "home_goals_for_avg": 2.1,
+            "home_goals_against_avg": 0.8,
+            "away_goals_for_avg": 0.9,
+            "away_goals_against_avg": 1.7,
+            "opponent_elo_avg_5": 1520.0,
+        }
+
+        domicile = map_features_to_columns(raw, side="home")
+        exterieur = map_features_to_columns(raw, side="away")
+
+        # Chaque ligne retient la moyenne du lieu où SON équipe joue ce match.
+        assert domicile["home_away_goals_for_avg"] == pytest.approx(2.1)
+        assert domicile["home_away_goals_against_avg"] == pytest.approx(0.8)
+        assert exterieur["home_away_goals_for_avg"] == pytest.approx(0.9)
+        assert exterieur["home_away_goals_against_avg"] == pytest.approx(1.7)
+
+        assert domicile["opponent_strength"] == pytest.approx(1520.0)
+        assert domicile["data_completeness"] > 0
+
+    def test_l_ecart_de_repos_s_inverse_pour_l_equipe_exterieure(self):
+        """Chaque ligne décrit son équipe : un écart positif veut toujours dire
+        « mieux reposée que l'adversaire »."""
+        raw = {"rest_days_difference": 3}
+
+        assert map_features_to_columns(raw, side="home")["rest_days_diff"] == 3
+        assert map_features_to_columns(raw, side="away")["rest_days_diff"] == -3
+
+    def test_les_dix_variables_de_mi_temps_sont_mappees(self):
+        raw = {
+            "ht_home_win_rate": 0.6,
+            "ht_away_win_rate": 0.2,
+            "ht_draw_rate": 0.3,
+            "ht_home_goals_avg": 0.9,
+            "ht_away_goals_avg": 0.4,
+            "ht_total_goals_avg": 1.2,
+            "ht_over_05_rate": 0.7,
+            "ht_over_15_rate": 0.4,
+            "ht_over_25_rate": 0.1,
+            "ht_over_35_rate": 0.0,
+        }
+
+        mapped = map_features_to_columns(raw)
+
+        for cle, valeur in raw.items():
+            assert mapped[cle] == pytest.approx(valeur), cle
 
     def test_rest_days_side_selection(self):
         raw = {"home_rest_days": 8, "away_rest_days": 5}

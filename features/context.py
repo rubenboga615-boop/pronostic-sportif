@@ -46,6 +46,11 @@ COLONNES_HISTORIQUE = [
     "away_shots",
     "home_shots_on_target",
     "away_shots_on_target",
+    # Buts de mi-temps : quinze des trente et une sélections portent sur la
+    # première période, et aucune variable ne la décrivait. Ils sont en base
+    # depuis le premier import ; seul le transport manquait.
+    "home_ht_goals",
+    "away_ht_goals",
 ]
 
 

@@ -22,6 +22,12 @@
 --
 -- Sens aller (UP) — idempotent.
 
+-- Transaction : les deux effacements doivent réussir ensemble. Interrompue
+-- entre les deux, la migration laisserait une base à moitié purgée — features
+-- nettoyées mais horodatages toujours menteurs — c'est-à-dire dans un état
+-- qu'aucune des deux versions du code ne sait interpréter.
+BEGIN TRANSACTION;
+
 -- 1) Effacer les valeurs contaminées.
 UPDATE features
    SET odds_movement = NULL
@@ -31,6 +37,8 @@ UPDATE features
 UPDATE odds_snapshots
    SET captured_at = NULL
  WHERE is_closing = 0;
+
+COMMIT;
 
 -- Sens retour (DOWN)
 -- ------------------

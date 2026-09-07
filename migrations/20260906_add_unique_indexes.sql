@@ -28,6 +28,8 @@
 -- Sens aller (UP) — idempotent.
 
 -- 1) Une seule ligne de features par match et par équipe.
+BEGIN TRANSACTION;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_features_match_team
     ON features (match_id, team_id);
 -- DOWN: DROP INDEX IF EXISTS uq_features_match_team;
@@ -56,4 +58,6 @@ CREATE INDEX IF NOT EXISTS idx_matches_competition_date
 -- 6) Consultation des prédictions d'un match (API, tableau de bord).
 CREATE INDEX IF NOT EXISTS idx_predictions_match
     ON predictions (match_id);
+
+COMMIT;
 -- DOWN: DROP INDEX IF EXISTS idx_predictions_match;

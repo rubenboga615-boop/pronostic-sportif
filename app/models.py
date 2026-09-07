@@ -194,6 +194,33 @@ class Feature(Base):
     odds_movement = Column(Float)
     data_completeness = Column(Float)
 
+    # Première mi-temps. Quinze des trente et une sélections d'un match y
+    # portent, et rien ne la décrivait : le moteur prédisait la mi-temps sans
+    # rien savoir du comportement des équipes en première période. `HTHG` et
+    # `HTAG` étaient en base depuis le premier import ; seul le calcul dérivé
+    # manquait. Voir `features/half_time.py`.
+    ht_home_win_rate = Column(Float)
+    ht_away_win_rate = Column(Float)
+    ht_draw_rate = Column(Float)
+    ht_home_goals_avg = Column(Float)
+    ht_away_goals_avg = Column(Float)
+    ht_total_goals_avg = Column(Float)
+    ht_over_05_rate = Column(Float)
+    ht_over_15_rate = Column(Float)
+    ht_over_25_rate = Column(Float)
+    ht_over_35_rate = Column(Float)
+
+    # Encombrement du calendrier. Les jours de repos disent quand l'équipe a
+    # joué pour la dernière fois, pas la charge accumulée.
+    rest_days_diff = Column(Integer)
+    matches_last_7_days = Column(Integer)
+    matches_last_14_days = Column(Integer)
+
+    # Solidité et stérilité, les deux moitiés du BTTS. Calculées par `form.py`
+    # depuis toujours, elles étaient jetées faute de colonne.
+    clean_sheets_5 = Column(Integer)
+    failed_to_score_5 = Column(Integer)
+
 
 class Prediction(Base):
     __tablename__ = "predictions"

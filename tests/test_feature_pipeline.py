@@ -178,10 +178,24 @@ class TestComputeMatchFeatures:
         assert result["away"]["elo_rating"] == pytest.approx(1484.0)
 
     def test_unavailable_columns_are_none(self):
+        """Les colonnes sans source restent nulles — jamais comblées."""
         result = compute_match_features(_target_match(), _prior_df(), _odds_df())
         for side in ("home", "away"):
-            assert result[side]["opponent_strength"] is None
             assert result[side]["xg_avg_5"] is None
             assert result[side]["xga_avg_5"] is None
             assert result[side]["npxg_avg_5"] is None
             assert result[side]["injury_impact"] is None
+
+    def test_opponent_strength_est_desormais_calculee(self):
+        """Colonne autrefois déclarée sans écrivain, nulle sur toute la base."""
+        result = compute_match_features(_target_match(), _prior_df(), _odds_df())
+
+        for side in ("home", "away"):
+            assert result[side]["opponent_strength"] is not None
+
+    def test_data_completeness_mesure_le_remplissage_de_la_ligne(self):
+        result = compute_match_features(_target_match(), _prior_df(), _odds_df())
+
+        for side in ("home", "away"):
+            part = result[side]["data_completeness"]
+            assert 0.0 < part < 1.0  # xG et blessures manquent encore
