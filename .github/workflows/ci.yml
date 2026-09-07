@@ -49,3 +49,36 @@ jobs:
 
       - name: Exécuter la suite de tests
         run: python -m pytest -q
+
+  noyau_seul:
+    name: Suite verte sans les extras
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Le noyau — import, features, entraînement, prédiction, règlement,
+    # backtest — doit tourner sans scikit-learn ni FastAPI. Le job « qualite »
+    # installe les extras et ne peut donc pas le vérifier : c'est ainsi qu'une
+    # suite verte en intégration continue s'est retrouvée à quatre échecs sur
+    # une installation « dev » seule.
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer le noyau et les outils de test uniquement
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Vérifier qu'aucun extra ne s'est glissé dans l'installation
+        run: |
+          ! python -c "import sklearn" 2>/dev/null
+          ! python -c "import fastapi" 2>/dev/null
+
+      - name: Exécuter la suite de tests
+        run: python -m pytest -q

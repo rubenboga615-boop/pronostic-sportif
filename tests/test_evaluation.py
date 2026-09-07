@@ -6,6 +6,7 @@ part, le ROI du backtest se mesurait contre la cote du modèle lui-même — une
 tautologie — et la calibration retournait ses entrées inchangées.
 """
 
+import importlib.util
 from datetime import datetime
 
 import numpy as np
@@ -29,6 +30,19 @@ from evaluation.pricing import (
 )
 from evaluation.settlement import persister_resultats, regler_match
 from models.calibration import Calibrateur, ajuster_calibrateur, calibrate_probabilities
+
+# L'ajustement d'un calibrateur est la seule brique du projet qui exige
+# scikit-learn, déclaré dans l'extra « ml ». Sur les plateformes sans roue
+# précompilée — Termux sur Android, par exemple — l'installer suppose une
+# compilation longue. Ces tests-là s'ignorent donc en son absence, plutôt que
+# de faire échouer une suite par ailleurs verte. Le comportement attendu quand
+# scikit-learn manque reste couvert, lui, par
+# TestDependancesOptionnelles::test_la_calibration_explique_ce_qui_manque, qui
+# simule l'absence et n'a donc besoin de rien.
+SANS_SKLEARN = pytest.mark.skipif(
+    importlib.util.find_spec("sklearn") is None,
+    reason='scikit-learn absent : installer avec pip install -e ".[ml]"',
+)
 
 
 def _match(hg=2, ag=1, h1=1, a1=0, mid=1):
@@ -441,6 +455,7 @@ class TestCalibration:
         issues = (rng.uniform(size=n) < vraies).astype(int)
         return issues, annoncees
 
+    @SANS_SKLEARN
     def test_platt_reduit_l_erreur_de_calibration(self):
         y, p = self._jeu_surconfiant()
         moitie = len(y) // 2
@@ -452,6 +467,7 @@ class TestCalibration:
         apres = erreur_de_calibration(y[moitie:], corrigees)
         assert apres < avant
 
+    @SANS_SKLEARN
     def test_isotonique_reduit_l_erreur_de_calibration(self):
         y, p = self._jeu_surconfiant()
         moitie = len(y) // 2
@@ -463,6 +479,7 @@ class TestCalibration:
             y[moitie:], p[moitie:]
         )
 
+    @SANS_SKLEARN
     def test_les_probabilites_restent_dans_zero_un(self):
         y, p = self._jeu_surconfiant()
         calibrateur = ajuster_calibrateur(y, p, "isotonic")
@@ -471,6 +488,7 @@ class TestCalibration:
 
         assert (corrigees >= 0).all() and (corrigees <= 1).all()
 
+    @SANS_SKLEARN
     def test_serialisation(self):
         y, p = self._jeu_surconfiant()
         calibrateur = ajuster_calibrateur(y, p, "platt")
