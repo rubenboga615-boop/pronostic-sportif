@@ -174,8 +174,7 @@ class TestArbitre:
         """Elle manque dans les saisons anciennes de certains championnats."""
         csv = tmp_path / "E0_1415.csv"
         csv.write_text(
-            "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
-            "E0,10/08/2014,Arsenal,Chelsea,2,1,H\n",
+            "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\nE0,10/08/2014,Arsenal,Chelsea,2,1,H\n",
             encoding="utf-8",
         )
 

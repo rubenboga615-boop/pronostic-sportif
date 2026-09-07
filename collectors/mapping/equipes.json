@@ -1,0 +1,19 @@
+{
+  "_lisez_moi": [
+    "Correspondance nom du fournisseur -> nom canonique Football-Data.",
+    "Ce fichier est une DÉCISION RELUE, pas une donnée calculée : chaque ligne",
+    "a été vérifiée par un humain. Ne le modifiez pas à la main sans raison ;",
+    "utilisez scripts/generer_correspondances.py, qui propose puis fusionne.",
+    "",
+    "Il est vide tant que les listes de noms des fournisseurs n'ont pas été",
+    "récupérées — voir scripts/sonde_api_football.py. Vide, la résolution",
+    "stricte fonctionne déjà sur les noms qui coïncident avec les noms",
+    "canoniques, et lève sur tous les autres. C'est le comportement voulu :",
+    "un import qui refuse de démarrer vaut mieux qu'un import qui réussit en",
+    "dupliquant Manchester United."
+  ],
+  "correspondances": {
+    "api_football": {},
+    "understat": {}
+  }
+}
