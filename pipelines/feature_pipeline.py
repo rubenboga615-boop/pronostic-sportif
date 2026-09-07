@@ -18,6 +18,7 @@ from features.odds_movement import calculate_odds_movement
 from features.rest_days import calculate_congestion_features, calculate_rest_features
 from features.shots import calculate_shots_features
 from features.standings import get_team_position
+from features.xg import calculate_xg_features
 
 
 def run_feature_pipeline() -> dict[str, int]:
@@ -47,12 +48,27 @@ def run_feature_pipeline() -> dict[str, int]:
             "FROM odds_snapshots",
             session.get_bind(),
         )
+        # Les xG sont joints à la date de LEUR match : c'est elle qui dit ce
+        # qui était connaissable, pas `retrieved_at` (voir features/xg.py).
+        xg_df = pd.read_sql_query(
+            "SELECT x.match_id, x.team_id, x.xg, x.xga, x.npxg, "
+            "m.match_date, m.season_id "
+            "FROM xg_match_stats x JOIN matches m ON m.id = x.match_id",
+            session.get_bind(),
+        )
         matches_df["match_date"] = pd.to_datetime(matches_df["match_date"])
+        if not xg_df.empty:
+            xg_df["match_date"] = pd.to_datetime(xg_df["match_date"])
+        logger.info(f"{len(xg_df)} lignes de xG chargées")
 
         # Les cotes sont indexées par match : les filtrer à chaque appel
         # reviendrait à parcourir toute la table pour chaque match.
         cotes_par_match = dict(tuple(odds_df.groupby("match_id"))) if not odds_df.empty else {}
         cotes_vides = odds_df.iloc[0:0]
+
+        # Même raisonnement pour les xG, indexés par équipe : chaque appel ne
+        # regarde que l'historique de l'équipe concernée.
+        xg_par_equipe = dict(tuple(xg_df.groupby("team_id"))) if not xg_df.empty else {}
 
         processed = 0
         contexte = FeatureContext()
@@ -63,7 +79,9 @@ def run_feature_pipeline() -> dict[str, int]:
         for _, journee in matches_df.groupby("match_date", sort=True):
             for _, match in journee.iterrows():
                 cotes = cotes_par_match.get(int(match["id"]), cotes_vides)
-                cols = compute_match_features(match, None, cotes, context=contexte)
+                cols = compute_match_features(
+                    match, None, cotes, context=contexte, xg_par_equipe=xg_par_equipe
+                )
                 persist_match_features(session, match, cols["home"], cols["away"])
                 processed += 1
             for _, match in journee.iterrows():
@@ -79,11 +97,20 @@ def run_feature_pipeline() -> dict[str, int]:
         session.close()
 
 
+# Tableau vide servant de repli quand aucun xG n'est disponible pour l'équipe.
+# Il porte les colonnes attendues afin que le filtre anti-fuite s'applique sans
+# cas particulier.
+_AUCUN_XG = pd.DataFrame(
+    columns=["match_id", "team_id", "xg", "xga", "npxg", "match_date", "season_id"]
+)
+
+
 def compute_match_features(
     match: pd.Series,
     prior_matches_df: pd.DataFrame | None,
     odds_df: pd.DataFrame,
     context: FeatureContext | None = None,
+    xg_par_equipe: dict[int, pd.DataFrame] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Calculer en mémoire les features d'un match pour les deux équipes.
 
@@ -102,7 +129,10 @@ def compute_match_features(
     - ``odds_movement`` est calculé par sélection (``home``/``away``) selon le côté,
       en n'observant que des cotes capturées avant le coup d'envoi ;
     - ``goal_difference`` n'est fourni que s'il est disponible avant le match ;
-    - ``xg_*`` et ``injury_impact`` restent ``None`` faute de source ;
+    - ``xg_*`` sont calculés dès que ``xg_par_equipe`` est fourni, en ne
+      retenant que les matchs strictement antérieurs à la cible ; ils restent
+      ``None`` sur les matchs qu'Understat ne couvre pas ;
+    - ``injury_impact`` reste ``None`` faute de source ;
       ``opponent_strength`` est désormais renseignée.
     """
     match_date = pd.Timestamp(match["match_date"])
@@ -179,6 +209,16 @@ def compute_match_features(
                 team_id,
                 match_date,
                 lambda tid: context.elo(tid, season_id),
+            ),
+            # xG : seule source du projet pour ces trois colonnes. Absente,
+            # elles restent nulles — jamais 0.0, qui se lirait comme une
+            # équipe sans occasion.
+            **calculate_xg_features(
+                (xg_par_equipe or {}).get(team_id, _AUCUN_XG),
+                team_id,
+                match_date,
+                season_id=season_id,
+                matchs_joues=historique,
             ),
             "league_position": get_team_position(standings, team_id),
             "goal_difference": _goal_difference(standings, team_id),
