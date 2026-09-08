@@ -9,7 +9,8 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **550 réussis, 4 ignorés** (les tests ignorés sont les
+- Suite de tests : **562 réussis, 0 ignoré** (scikit-learn installé : les
+  quatre tests de calibration ne s'ignorent plus) (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
   calibration s'ignorent faute de scikit-learn, et c'est voulu. Le noyau
@@ -59,42 +60,53 @@ discordance**.
 Saisons en base : 2014/15 → 2019/20, puis 2023/24 → 2025/26. **Manquent
 2020/21, 2021/22 et 2022/23** : le miroir s'arrête en janvier 2021.
 
-## Premier rendement mesuré — et il est négatif
+## Rendement mesuré, et l'effet de la calibration
 
-Dixon-Coles entraîné sur les 2 660 matchs de 2014/15 → 2023/24, testé sur
-2024/25 et 2025/26. Rendement calculé **contre les cotes de clôture**, sur les
-380 matchs de 2024/25 (2025/26 est entrée sans cotes).
+Protocole enfin conforme à l'esprit de D-02 : entraînement sur 2014/15 →
+2019/20 (2 214 matchs), **calibration ajustée sur 2023/24**, saison absente de
+l'entraînement, puis appliquée à 2024/25 et 2025/26. Rendement contre les cotes
+de **clôture**.
 
-| Stratégie | Paris | ROI |
-|---|---|---|
-| Modèle, toutes sélections 1N2 | 1 140 | **−5,90 %** |
-| Modèle, `edge ≥ 2 %` | 422 | **−14,18 %** |
-| Modèle, `edge ≥ 5 %` | 298 | **−17,49 %** |
-| Naïf domicile | 380 | −18,35 % |
-| Favori du marché | 380 | **−2,06 %** |
+### La calibration change tout sur le 1N2
 
-**Le constat qui commande tout le reste : sélectionner sur l'edge dégrade le
-rendement.** Parier toutes les sélections perd 5,9 % ; ne garder que celles où
-le modèle croit avoir un avantage de 5 % en perd 17,5 %. L'edge n'est pas
-seulement dépourvu de pouvoir prédictif — il est anti-corrélé au résultat.
+| Marché | probabilités | toutes | edge ≥ 0 | edge ≥ 2 % | edge ≥ 5 % |
+|---|---|---|---|---|---|
+| 1N2 | brutes | −2,87 | −11,17 | −14,15 | −16,16 |
+| 1N2 | **Platt** | −2,87 | −6,25 | −5,33 | **−6,05** |
+| Over/Under | brutes | −1,83 | −3,85 | −5,15 | −7,63 |
+| Over/Under | **Platt** | −1,83 | +0,00 | +2,46 | **+6,55** |
 
-Le détail par tranche de cote dit où :
+Platt ramène l'erreur de calibration de **0,107 à 0,044**, améliore log-loss
+(0,672 → 0,631) et Brier (0,232 → 0,219), et récupère **dix points de ROI** sur
+la sélection à 5 % du 1N2. La méthode isotonique fait moins bien (0,067) : elle
+demande plus de données, comme l'annonce son module.
 
-| Cote | Paris | ROI |
-|---|---|---|
-| 1,00–1,50 | 98 | −3,4 % |
-| 1,50–2,00 | 148 | −8,9 % |
-| 2,00–3,00 | 192 | **+0,7 %** |
-| 3,00–5,00 | 476 | −3,0 % |
-| 5,00 et + | 226 | **−16,8 %** |
+Sur l'Over/Under calibré, le rendement **croît avec le seuil d'edge**
+(0,00 → +2,46 → +6,55). C'est le comportement qu'on attend d'un edge porteur
+d'information, et l'inverse exact de ce qu'on observait sans calibration.
 
-C'est cohérent avec la calibration : le modèle sous-estime les événements peu
-probables (annoncé 0,06 → observé 0,15) et surestime les probables. Il fabrique
-donc de faux avantages sur les outsiders, où il perd le plus.
+### ⚠️ Mais rien n'est prouvé — les intervalles englobent zéro
 
-**Conséquence pour D-06** : la condition de publication des coupons — rendement
-positif sur les saisons de test — n'est pas remplie, et l'écart est large. Le
-lot E reste fermé.
+| Marché | seuil | paris | ROI | IC 95 % (bootstrap) |
+|---|---|---|---|---|
+| 1N2 | ≥ 5 % | 405 | −6,05 % | [−24,91 ; +13,97] |
+| Over/Under | ≥ 2 % | 326 | +2,46 % | [−11,05 ; +15,46] |
+| Over/Under | ≥ 5 % | 262 | **+6,55 %** | **[−9,18 ; +22,15]** |
+
+**Aucun de ces chiffres n'est statistiquement distinguable de zéro.** Le +6,55 %
+est un signe encourageant, pas un résultat. L'écart-type du gain par pari est de
+1,19 : il faudrait
+
+- **~2 200 paris** pour établir un ROI de +5 % (≈ 3 saisons),
+- ~6 100 pour +3 %,
+- ~13 600 pour +2 %.
+
+Nous en avons **262**. C'est l'argument décisif pour compléter le corpus : les
+quatre autres championnats et les saisons manquantes, non pour mieux entraîner,
+mais pour pouvoir **mesurer**.
+
+**D-06 reste non remplie** : la condition est un rendement positif *démontré*.
+Le lot E reste fermé.
 
 ### Métriques de probabilité (760 matchs de test)
 
@@ -221,7 +233,27 @@ n'a été introduit : la règle découle de la définition de la variable, et le
 valeurs reviendront d'elles-mêmes le jour où la source sera complétée.
 
 ## Prochaine action
-**Comprendre pourquoi l'edge est anti-corrélé.** C'est la question qui bloque
+**Compléter le corpus, pour pouvoir mesurer.** C'est désormais le seul verrou :
+le protocole tient, la calibration fonctionne, l'Over/Under montre un signe
+positif — mais 262 paris ne permettent de rien conclure. Il faut les quatre
+autres championnats, et les saisons 2020/21 à 2022/23.
+
+Piste établie le 08/09/2026 : football-data.co.uk reste bloqué, mais **GitHub
+est accessible** et des miroirs existent. Celui qui a servi
+(`jokecamp/FootballData`) s'arrête en janvier 2021 et n'a de structure par
+saison que pour l'Angleterre ; les autres pays y sont en fichiers numérotés,
+dont la saison se déduit des dates. Toute source retenue doit être **croisée
+avec Understat avant import**, comme les six saisons anglaises l'ont été
+(2 254 matchs, zéro discordance).
+
+### Ce qui reste à brancher
+La calibration a été appliquée **à la main** : `models/calibration.py` n'est
+toujours pas dans le chemin du pipeline, pas plus que
+`evaluation/pricing.py`. Trois modules corrects et non raccordés, c'est un
+motif — à traiter comme tel.
+
+### L'ancienne question, résolue
+**Pourquoi l'edge était-il anti-corrélé.** C'est la question qui bloque
 tout le reste : un moteur dont la sélection dégrade le rendement ne peut ni
 publier de coupons (D-06), ni justifier une couche supplémentaire.
 

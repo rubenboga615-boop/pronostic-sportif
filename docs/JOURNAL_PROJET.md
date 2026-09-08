@@ -36,6 +36,65 @@ Description précise.
 
 ---
 
+## 2026-09-08 (suite) — La calibration récupère dix points de ROI
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Carte blanche pour la suite.
+
+### Actions effectuées
+- scikit-learn installé (seul, non l'extra `ml` complet : xgboost et lightgbm
+  relèvent de la couche ML, écartée pour l'instant). Les quatre tests de
+  calibration ne s'ignorent plus — **562 tests, 0 ignoré**.
+- Fichiers créés : `pipelines/completer_cotes.py`, `tests/test_completer_cotes.py`
+- Modèle `dc-calib` entraîné sur 2014/15 → 2019/20, **2023/24 laissée vierge**
+  pour servir de jeu de calibration.
+- Base modifiée après sauvegarde vérifiée.
+
+### Un quatrième angle mort comblé
+Les cotes Over/Under **manquaient sur les saisons de test**, alors que leurs
+fichiers en portaient vingt colonnes. Cause : 2023/24 et 2024/25 ont été
+importées avant que le parseur n'apprenne ces colonnes, et `historical_import`
+abandonne la ligne d'un match déjà présent — cotes comprises. D'où
+`completer_cotes`, qui ajoute des cotes à des matchs existants sans jamais en
+créer : **8 318 cotes ajoutées, dont 6 038 en Over/Under**, aucun match
+introuvable, aucun doublon.
+
+Un test a d'ailleurs attrapé un défaut au passage : passer `captured_at=None`
+ne suffit pas, SQLAlchemy applique le `default` de la colonne. Il faut
+`null()` — ce que `historical_import` faisait déjà.
+
+### Résultats
+- Platt ramène l'erreur de calibration de **0,107 à 0,044**, log-loss de 0,672 à
+  0,631, Brier de 0,232 à 0,219. L'isotonique fait moins bien (0,067), faute de
+  données — comme son module l'annonce.
+- **Dix points de ROI récupérés** sur la sélection à 5 % du 1N2 : −16,16 % →
+  −6,05 %.
+- Sur l'Over/Under calibré, le rendement **croît avec le seuil d'edge**
+  (0,00 → +2,46 → +6,55 %). C'est le comportement attendu d'un edge informatif,
+  et l'inverse de ce qu'on observait la veille.
+- **Mais rien n'est prouvé.** IC 95 % par bootstrap sur l'Over/Under à 5 % :
+  [−9,18 ; +22,15]. Zéro est dedans. Avec un écart-type de gain de 1,19 par
+  pari, il faudrait ~2 200 paris pour établir +5 %, ~13 600 pour +2 %. Nous en
+  avons 262.
+
+### Réponse à la question de la veille
+L'edge était anti-corrélé **parce que les probabilités n'étaient pas
+calibrées** : le modèle sous-estimait les événements peu probables, donc
+fabriquait de faux avantages sur les outsiders. Calibré, l'edge cesse de nuire
+sur le 1N2 et devient plausiblement porteur sur l'Over/Under.
+
+### Commit
+- `feat:` pour `completer_cotes`, `docs:` pour les mesures.
+
+### Prochaine étape
+Compléter le corpus — non pour mieux entraîner, mais pour pouvoir **mesurer**.
+262 paris ne permettent de rien conclure.
+
+---
+
 ## 2026-09-08 (nuit) — Corpus triplé, premier rendement mesuré : négatif
 
 ### Agent
