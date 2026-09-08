@@ -1,7 +1,7 @@
 # État actuel du projet
 
 > Fichier de référence à lire en premier. Tenir à jour après chaque session.
-> Dernière mise à jour : 2026-09-07.
+> Dernière mise à jour : 2026-09-08.
 
 ## Projet
 Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligue 1).
@@ -32,77 +32,87 @@ mesuré sur les deux saisons de test.
 
 Décisions et motifs : `docs/DECISIONS.md`.
 
-## Corpus en base au 07/09/2026
-
-| Saison | Matchs | Mi-temps | Arbitre | Cotes | xG |
-|---|---|---|---|---|---|
-| 2023/24 | 380 | 380 | — | oui | 380 matchs — **couverture complète** |
-| 2024/25 | 380 | 380 | — | oui | 59 matchs — début de saison seulement |
-| 2025/26 | 380 | 380 | 380 | **non** | — |
-
-**1 140 matchs**, Premier League seulement. `xg_match_stats` porte 878 lignes
-(439 matchs × 2 équipes), source `understat`, contrôlées par concordance de
-score : **zéro discordance** sur les 878.
-
-2025/26 vient d'un export sans cotes : ces 380 matchs servent à l'entraînement
-et aux métriques de probabilité (log-loss, Brier, AUC), **pas au rendement**.
-Aucun edge n'est calculable dessus.
-
 ## Ce qui fonctionne de bout en bout
 Import → features → entraînement → prédiction → règlement → valorisation →
 backtest. Vérifié sur les données réelles : 760 matchs importés avec leurs
 cotes Over/Under, modèle entraîné sur 2023/24, 10 160 prédictions générées et
 réglées sur 2024/25, rapport de backtest complet.
 
-## Évaluation sur 2025/26 — saison jamais vue (08/09/2026)
+## Corpus débloqué le 08/09/2026 — 3 420 matchs
 
-Dixon-Coles entraîné sur **2023/24 + 2024/25** (760 matchs, 23 équipes),
-appliqué aux 380 matchs de 2025/26. Découpage signalé au titre de D-02 :
-`--train-end 2025-06-30`, faute des saisons 2015/16 → 2022/23.
+football-data.co.uk restant injoignable (503), les CSV ont été récupérés sur un
+**miroir GitHub** (`jokecamp/FootballData`), au format d'origine et complets :
+mi-temps, arbitre, sept bookmakers, Over/Under 2,5 et **cotes de clôture
+Pinnacle**.
 
-| Marché | matchs | Accuracy | Log-loss | Brier | AUC | Err. calibr. |
-|---|---|---|---|---|---|---|
-| 1N2 | 380 | 0,463 | 0,610 | 0,210 | 0,645 | 0,046 |
-| Over/Under | 380 | 0,732 | 0,544 | 0,181 | 0,752 | — |
-| Over/Under 1re MT | 306 | 0,764 | 0,525 | 0,174 | **0,782** | — |
-| 1N2 1re mi-temps | 306 | 0,418 | 0,608 | 0,210 | 0,630 | — |
-| Mi-temps prolifique | 306 | 0,441 | 0,620 | 0,215 | 0,608 | — |
-| BTTS | 380 | 0,539 | 0,729 | 0,263 | 0,534 | — |
+Authenticité vérifiée avant import, par croisement avec une source
+indépendante : **2 254 matchs comparés aux scores d'Understat, zéro
+discordance**.
 
-**Aucun rendement n'est mesurable** : 2025/26 est entrée sans cotes. Les
-stratégies `edge_5pct` et `edge_2pct` retiennent zéro pari, et les références
-naïve et marché sont indisponibles. Seules log-loss, Brier et AUC valent ici.
-
-### Une saison d'entraînement de plus vaut mieux qu'une saison de validation
-Comparé au même protocole entraîné sur 2023/24 seule, l'ajout de 2024/25
-améliore **22 des 24 comparaisons** (4 métriques × 6 marchés) — seule l'AUC du
-BTTS recule, de 0,545 à 0,534. Les écarts sont petits un à un ; leur cohérence
-ne l'est pas.
-
-Le gain décisif est la **calibration, de 0,066 à 0,046**, et il porte là où il
-comptait :
-
-| Annoncé | 1 saison | 2 saisons |
+| | avant | après |
 |---|---|---|
-| 0,55 | 0,40 | **0,48** |
-| 0,64 | 0,57 | **0,66** |
-| 0,74 | 0,65 | **0,75** |
+| Matchs | 1 140 | **3 420** (9 saisons) |
+| Cotes | 9 285 | **46 516** |
+| Lignes de xG | 878 | **5 386** |
+| Lignes de features | 2 280 | **6 840** |
 
-La surconfiance du haut du spectre, que D-06 identifie comme rédhibitoire pour
-les coupons puisqu'elle se compose en puissance, a largement disparu.
+Saisons en base : 2014/15 → 2019/20, puis 2023/24 → 2025/26. **Manquent
+2020/21, 2021/22 et 2022/23** : le miroir s'arrête en janvier 2021.
 
-Dixon-Coles ne réglant aucun hyperparamètre sur la validation, réserver une
-saison à cet usage revenait à jeter 380 matchs. Le découpage à trois volets
-reprendra son sens le jour où une couche à hyperparamètres existera.
+## Premier rendement mesuré — et il est négatif
 
-### Deux limites à connaître avant de lire ces chiffres
-- **Leeds United et Sunderland n'ont jamais été vues à l'entraînement** — elles
-  montent en 2025/26 — et jouent 108 des 380 matchs, soit 28 % du jeu de test.
-  Le modèle n'a aucune force estimée pour elles.
-- **Les marchés de mi-temps ne couvrent que 306 matchs sur 380.** Les 74
-  manquants sont ceux dont les variables `ht_*` sont vides : les premières
-  journées, où aucun taux n'est fondé. Pas de variable, pas de prédiction —
-  cohérent, mais cela coûte 19 % des matchs sur 15 des 31 sélections.
+Dixon-Coles entraîné sur les 2 660 matchs de 2014/15 → 2023/24, testé sur
+2024/25 et 2025/26. Rendement calculé **contre les cotes de clôture**, sur les
+380 matchs de 2024/25 (2025/26 est entrée sans cotes).
+
+| Stratégie | Paris | ROI |
+|---|---|---|
+| Modèle, toutes sélections 1N2 | 1 140 | **−5,90 %** |
+| Modèle, `edge ≥ 2 %` | 422 | **−14,18 %** |
+| Modèle, `edge ≥ 5 %` | 298 | **−17,49 %** |
+| Naïf domicile | 380 | −18,35 % |
+| Favori du marché | 380 | **−2,06 %** |
+
+**Le constat qui commande tout le reste : sélectionner sur l'edge dégrade le
+rendement.** Parier toutes les sélections perd 5,9 % ; ne garder que celles où
+le modèle croit avoir un avantage de 5 % en perd 17,5 %. L'edge n'est pas
+seulement dépourvu de pouvoir prédictif — il est anti-corrélé au résultat.
+
+Le détail par tranche de cote dit où :
+
+| Cote | Paris | ROI |
+|---|---|---|
+| 1,00–1,50 | 98 | −3,4 % |
+| 1,50–2,00 | 148 | −8,9 % |
+| 2,00–3,00 | 192 | **+0,7 %** |
+| 3,00–5,00 | 476 | −3,0 % |
+| 5,00 et + | 226 | **−16,8 %** |
+
+C'est cohérent avec la calibration : le modèle sous-estime les événements peu
+probables (annoncé 0,06 → observé 0,15) et surestime les probables. Il fabrique
+donc de faux avantages sur les outsiders, où il perd le plus.
+
+**Conséquence pour D-06** : la condition de publication des coupons — rendement
+positif sur les saisons de test — n'est pas remplie, et l'écart est large. Le
+lot E reste fermé.
+
+### Métriques de probabilité (760 matchs de test)
+
+| Marché | matchs | Accuracy | Log-loss | Brier | AUC |
+|---|---|---|---|---|---|
+| 1N2 | 760 | 0,458 | 0,616 | 0,212 | 0,644 |
+| Over/Under | 760 | 0,737 | 0,527 | 0,176 | 0,751 |
+| Over/Under 1re MT | 684 | 0,752 | 0,539 | 0,179 | 0,767 |
+| 1N2 1re mi-temps | 684 | 0,392 | 0,615 | 0,213 | 0,616 |
+| Mi-temps prolifique | 684 | 0,442 | 0,624 | 0,217 | 0,606 |
+| BTTS | 760 | 0,553 | 0,702 | 0,253 | 0,561 |
+
+### Un troisième module écrit et jamais branché
+`evaluation/pricing.py` calcule `offered_odds` et `edge` depuis
+`odds_snapshots`. **Aucun pipeline ne l'appelle** : les 22 420 prédictions
+étaient toutes sans prix, et le rendement restait `None` faute d'être
+calculable. Il a fallu l'invoquer à la main pour obtenir les chiffres ci-dessus.
+C'est le même défaut que `features/xg.py` la veille — à brancher.
 
 ## Travaux terminés
 - **Foreign keys SQLite**, **index déclarés dans l'ORM** et **contraintes
@@ -211,24 +221,21 @@ n'a été introduit : la règle découle de la définition de la variable, et le
 valeurs reviendront d'elles-mêmes le jour où la source sera complétée.
 
 ## Prochaine action
-**Le moteur ne consomme pas les features.** C'est le constat le plus important
-de la journée du 07/09. Sur les 38 colonnes de `features`, `market_assembly`
-n'en lit que deux — `goals_for_avg_5` et `goals_against_avg_5`. Les 878 xG
-importés et les quinze variables de mi-temps calculées **n'atteignent aucun
-modèle** : Dixon-Coles s'estime sur les buts seuls, conformément à D-05, et la
-couche de gradient boosting que cette décision qualifie d'« éventuelle »
-n'existe pas.
+**Comprendre pourquoi l'edge est anti-corrélé.** C'est la question qui bloque
+tout le reste : un moteur dont la sélection dégrade le rendement ne peut ni
+publier de coupons (D-06), ni justifier une couche supplémentaire.
 
-Tant qu'elle n'existe pas, mesurer l'apport d'Understat est impossible, et la
-question laissée ouverte par l'étape 6 b — l'effet des variables de mi-temps sur
-l'AUC du 1N2 de première période — reste sans réponse.
-
-Deux directions, à trancher :
-1. **Ouvrir la couche qui consomme les features** (D-05). C'est ce qui rendrait
-   utile le travail des étapes 6 b et 8. Le hors-périmètre de `ROADMAP.md`
-   l'autorise depuis la fin de l'étape 6.
-2. **Poursuivre le lot C** — étape 9, l'API et l'interface d'administration —
-   en laissant les features en attente d'un consommateur.
+Trois pistes, par ordre de coût :
+1. **Calibrer** avant de calculer l'edge. `models/calibration.py` existe et
+   n'est pas dans le chemin. Le modèle sous-estime les événements peu probables
+   et surestime les probables : l'edge hérite de ce biais, et le sélectionner
+   revient à parier sur l'erreur de calibration. Une saison de validation
+   distincte existe désormais (2023/24).
+2. **Brancher `evaluation/pricing.py`** dans le pipeline, pour que le prix et
+   l'edge cessent d'être un calcul manuel.
+3. **Compléter le corpus** : 2020/21, 2021/22 et 2022/23 manquent, et les quatre
+   autres championnats aussi. Le rendement n'est mesuré que sur 380 matchs — à
+   ce volume, un ROI de −5,9 % n'est pas distinguable de −2 % ni de −10 %.
 
 ### L'import des 12 saisons reste à faire
 `football-data.co.uk` renvoie un **503** depuis toutes les machines essayées

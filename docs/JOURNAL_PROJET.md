@@ -36,6 +36,65 @@ Description précise.
 
 ---
 
+## 2026-09-08 (nuit) — Corpus triplé, premier rendement mesuré : négatif
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Carte blanche : « je me fie à ton jugement ».
+
+### Décision prise, et pourquoi
+Ni la couche de gradient boosting, ni l'étape 9. Les deux souffraient du même
+défaut : la base contenait 1 140 matchs sur les ~19 900 visés, soit 5,7 % du
+corpus. Un gradient boosting sur 1 520 lignes de features dont un tiers vides
+mesure du bruit ; une interface d'administration habille un moteur dont le
+rendement reste invérifiable. La feuille de route est explicite — « charger
+avant de modéliser ». Le goulot était le chargement.
+
+### Actions effectuées
+- Recherche d'un miroir de football-data.co.uk, le site restant bloqué (503).
+  Trouvé : `jokecamp/FootballData`, format d'origine, cotes de clôture
+  comprises. GitHub est accessible depuis cette machine.
+- **Authenticité vérifiée avant import** : 2 254 matchs croisés avec les scores
+  d'Understat, **zéro discordance**.
+- Import de six saisons (2014/15 → 2019/20), réimport des xG, recalcul complet
+  des features, entraînement sur 2 660 matchs, prédiction et règlement des deux
+  saisons de test, valorisation contre les cotes de clôture, backtest.
+- Base modifiée quatre fois, chaque fois après sauvegarde vérifiée.
+
+### Résultats
+- Matchs 1 140 → **3 420** ; cotes 9 285 → **46 516** ; xG 878 → **5 386**
+  (toujours zéro score discordant) ; features 2 280 → **6 840**.
+- xG désormais à 95 % sur sept saisons. Contrôles anti-fuite tenus :
+  `MAX(league_position)` = 20, `odds_movement` nul, aucun doublon.
+- **Premier rendement du projet, contre les cotes de clôture** : modèle
+  −5,90 % sur 1 140 paris, favori du marché −2,06 %, naïf domicile −18,35 %.
+- **Le résultat le plus important est négatif et instructif : sélectionner sur
+  l'edge dégrade le rendement.** Toutes sélections : −5,9 %. Edge ≥ 2 % :
+  −14,2 %. Edge ≥ 5 % : −17,5 %. L'edge n'est pas neutre, il est anti-corrélé.
+- Par tranche de cote, seule 2,00–3,00 est positive (+0,7 %) ; 5,00 et plus perd
+  16,8 %. Cohérent avec la calibration : le modèle sous-estime les événements
+  peu probables (0,06 annoncé, 0,15 observé) et fabrique de faux avantages sur
+  les outsiders.
+- **D-06 n'est pas remplie**, et de loin. Le lot E reste fermé.
+
+### Troisième module écrit et jamais branché
+`evaluation/pricing.py` calcule `offered_odds` et `edge`. Aucun pipeline ne
+l'appelle : les 22 420 prédictions étaient sans prix, et le rendement restait
+`None`. Il a fallu l'invoquer à la main. Même défaut que `features/xg.py` la
+veille, et que `features/xg.py` n'était pas le premier.
+
+### Commit
+- `docs:` seulement — aucun code applicatif modifié.
+
+### Prochaine étape
+Comprendre pourquoi l'edge est anti-corrélé. Piste première : calibrer avant de
+calculer l'edge (`models/calibration.py` existe et n'est pas dans le chemin ; la
+saison de validation 2023/24 existe désormais).
+
+---
+
 ## 2026-09-08 — Entraînement et évaluation sur 2025/26
 
 ### Agent
