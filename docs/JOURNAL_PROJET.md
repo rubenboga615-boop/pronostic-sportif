@@ -36,6 +36,93 @@ Description précise.
 
 ---
 
+## 2026-09-08 (après-midi) — Chaque championnat prédit par son propre modèle
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Poursuivre le travail en cours.
+
+### Le défaut, tel qu'il était
+`train_models.py` entraîne **un modèle par compétition** et l'enregistre sous
+`{version}-comp{id}`. Rien, côté prédiction, ne tenait ce découpage :
+`run_prediction_pipeline` sélectionnait tous les matchs postérieurs à la date
+de coupure, tous championnats confondus, et les soumettait à un modèle unique.
+
+Le pire est que rien ne le signalait. `charger_modele` se rabat sur n'importe
+quel Dixon-Coles enregistré quand la version demandée est absente, et
+`DixonColesModel.lambdas` traite une équipe inconnue comme moyenne plutôt que
+de refuser de prédire. Vérifié en séance : `charger_modele("dc-test-comp2")`
+sur un registre ne portant que `dc-test-comp1` renvoie le modèle anglais, sans
+erreur ni avertissement. C'est ce qui avait produit, la nuit précédente, les
+1 372 matchs de quatre championnats prédits par le modèle de Premier League, et
+un backtest tous championnats confondus jugé inexploitable.
+
+### Actions effectuées
+- Fichiers modifiés : `pipelines/prediction_pipeline.py`,
+  `scripts/generate_predictions.py` (jusque-là un `TODO` vide)
+- Fichiers créés : `tests/test_generate_predictions_script.py`
+- Base modifiée : **non**. Vérification sur la base réelle en lecture seule.
+- Import exécuté : non.
+
+Le pipeline prend un paramètre `competition_id` qui restreint la sélection au
+championnat demandé. Le script est devenu le pendant de `train_models.py` : il
+boucle sur les compétitions présentes en base, charge pour chacune
+`{version}-comp{id}` **à la version exacte**, et passe le modèle au pipeline
+plutôt que de le laisser le résoudre.
+
+Deux garde-fous, l'un et l'autre testés :
+
+- une compétition dont le modèle n'est pas au registre est **sautée avec une
+  erreur** — jamais rabattue sur celui d'un autre championnat ;
+- les modèles de mi-temps sont chargés ici aussi. Le pipeline ne les charge pas
+  de lui-même : sans ce chargement explicite, les marchés de première période
+  n'étaient pas produits du tout, en silence là encore.
+
+### Résultats
+- Tests : 590 → **598**, zéro ignoré.
+- Vérification en lecture seule sur `data/pronostic.db`, coupure au 30/06/2024
+  (protocole D-02) : les cinq modèles `dc-final-comp{1..5}` se résolvent,
+  mi-temps comprises.
+
+| Compétition | Matchs à prédire |
+|---|---|
+| Premier League | 760 |
+| Bundesliga | 612 |
+| Ligue 1 | 612 |
+| Serie A | 760 |
+| La Liga | 760 |
+
+**3 504 matchs au total** — c'est le lot que l'ancien appel soumettait à un
+modèle unique.
+
+### Ce que ça ne dit pas
+Aucune mesure nouvelle. Le rendement du moteur reste celui de la Premier
+League seule : −2,87 % en 1N2, −1,83 % en Over/Under. Ce qui change, c'est
+qu'un backtest multi-championnats devient enfin *interprétable* — il ne l'était
+pas, et le journal de la veille avait eu raison de l'écarter.
+
+### Un repli à revoir
+`charger_modele` se rabat toujours sur `registre.load("dixon_coles")` sans
+version. Le script le court-circuite en chargeant lui-même, mais le repli reste
+en place pour qui appelle le pipeline directement — `daily_update._step_predict`
+notamment, qui prédit encore sans `competition_id` et sous la version par
+défaut `poisson-v1`. Cette étape reste une ébauche, comme les sept autres.
+
+### Commit
+- `8c16af3 feat: chaque championnat prédit par son propre modèle`
+
+### Décision
+- À valider.
+
+### Prochaine étape
+Rejouer le backtest D-02 sur les cinq championnats, maintenant que chacun est
+prédit par son modèle, et voir si l'Over/Under tient son signe positif sur un
+volume cinq fois supérieur. C'est le seul marché encore crédible.
+
+---
+
 ## 2026-09-08 (matin) — La calibration n'était pas le problème du 1N2
 
 ### Agent

@@ -9,7 +9,7 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **589 réussis, 0 ignoré** (scikit-learn installé : les
+- Suite de tests : **598 réussis, 0 ignoré** (scikit-learn installé : les
   quatre tests de calibration ne s'ignorent plus) (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
@@ -153,14 +153,38 @@ pas retenir de sélection 1N2 sur ce critère.
 L'Over/Under garde un signe positif constant sur tous les seuils, mais reste
 indéterminé faute de volume.
 
-### ⚠️ Les quatre autres championnats ne sont pas mesurables
-`train_models.py` entraîne **par compétition**, et la Liga, la Serie A, la
-Bundesliga et la Ligue 1 n'ont que 2024/25 en base — aucun match avant la
-coupure d'entraînement. Leurs 1 372 matchs ont donc été prédits avec un modèle
-appris sur la **Premier League**, dont les forces d'équipes ne les décrivent
-pas. Un backtest tous championnats confondus affiche 2 982 paris et −5,72 % :
-**ce chiffre ne veut rien dire** et n'est pas retenu. Il faudra au moins trois
-saisons par championnat avant de les mesurer.
+### ✅ Chaque championnat est désormais prédit par son propre modèle
+`train_models.py` entraîne **par compétition** et enregistre chaque modèle sous
+`{version}-comp{id}`. Rien, côté prédiction, ne tenait ce découpage : le
+pipeline soumettait tous les matchs postérieurs à la coupure — 3 504 au
+protocole D-02 — à un modèle unique. C'est ce qui avait rendu inexploitable le
+backtest tous championnats confondus (2 982 paris, −5,72 %, écarté à raison).
+
+Le défaut était **silencieux à trois niveaux** : `charger_modele` se rabat sur
+n'importe quel Dixon-Coles enregistré si la version demandée manque
+(vérifié en séance) ; `DixonColesModel.lambdas` traite une équipe inconnue
+comme moyenne plutôt que de refuser de prédire ; et le pipeline ne charge pas
+les modèles de mi-temps, si bien que les marchés de première période n'étaient
+pas produits du tout.
+
+Corrigé des deux côtés :
+
+- `run_prediction_pipeline(competition_id=...)` restreint la sélection à un
+  championnat ;
+- `scripts/generate_predictions.py`, jusque-là un `TODO` vide, est devenu le
+  pendant de `train_models.py` : il boucle sur les compétitions en base, charge
+  `{version}-comp{id}` **à la version exacte** — mi-temps comprises — et passe
+  le modèle au pipeline. Une compétition sans modèle au registre est **sautée
+  avec une erreur**, jamais rabattue sur celui d'un autre championnat.
+
+Vérifié en lecture seule sur `data/pronostic.db`, coupure au 30/06/2024 : les
+cinq modèles `dc-final-comp{1..5}` se résolvent, et la sélection donne 760
+matchs en Premier League, 760 en Serie A, 760 en Liga, 612 en Bundesliga et 612
+en Ligue 1.
+
+**Le backtest à cinq championnats reste à rejouer** : rien n'a encore été
+mesuré sur ce périmètre, les chiffres ci-dessus restent ceux de la seule
+Premier League.
 
 ### Métriques de probabilité (760 matchs de test)
 
@@ -287,15 +311,14 @@ n'a été introduit : la règle découle de la définition de la variable, et le
 valeurs reviendront d'elles-mêmes le jour où la source sera complétée.
 
 ## Prochaine action
-**Compléter les quatre autres championnats** — il leur faut au moins trois
-saisons chacun pour être entraînables, donc mesurables. Sources : les deux
-miroirs déjà utilisés ne portent que 2024/25 pour eux ; il en faut d'autres, et
-tout candidat doit être croisé avec Understat avant import.
+**Rejouer le protocole D-02 sur les cinq championnats.** Chacun a maintenant
+son corpus *et* son modèle au moment de prédire — les deux verrous sont levés.
+La question à trancher : l'Over/Under garde-t-il son signe positif sur un
+volume cinq fois supérieur ? C'est le seul marché encore crédible, et son
+intervalle de confiance actuel ([−11,36 ; +19,74]) ne permet rien de conclure.
 
-**Puis reprendre la calibration.** Son erreur passe de 0,012 en validation à
-0,067 en test : apprise sur une saison, elle ne se transporte pas. Une fenêtre
-glissante, ou un calibrateur réajusté à chaque journée, corrigerait sans doute
-ce que la sélection par edge perd aujourd'hui.
+Commande : `python scripts/generate_predictions.py --version dc-final
+--reference-date 2024-06-30 --cotes-de-cloture`, puis le backtest par saison.
 
 ### L'ancienne action, faite
 **Compléter le corpus, pour pouvoir mesurer.** C'est désormais le seul verrou :
