@@ -36,6 +36,62 @@ Description précise.
 
 ---
 
+## 2026-09-08 — Entraînement et évaluation sur 2025/26
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Entraîner le modèle, puis le réentraîner sur les deux saisons disponibles.
+
+### Actions effectuées
+- Fichier modifié : `docs/ETAT_ACTUEL.md`
+- Commandes : `train_models.py` (deux protocoles), pipeline de prédiction,
+  règlement des 380 matchs, backtest comparatif
+- Base modifiée : **oui**, après sauvegarde vérifiée à chaque étape
+- Aucun code applicatif touché
+
+### Résultats
+- Deux modèles enregistrés : `dixon-coles-20260907-comp1` (2023/24 seule) et
+  `dixon-coles-2saisons-comp1` (2023/24 + 2024/25).
+- 10 670 prédictions par modèle sur 2025/26, 11 780 résultats réglés.
+- **L'entraînement sur deux saisons l'emporte sur 22 des 24 comparaisons**
+  (4 métriques × 6 marchés). Seule l'AUC du BTTS recule, 0,545 → 0,534.
+- Gain décisif sur la **calibration : 0,066 → 0,046**. Aux probabilités
+  annoncées 0,55 / 0,64 / 0,74, l'observé passe de 0,40 / 0,57 / 0,65 à
+  0,48 / 0,66 / 0,75. La surconfiance du haut du spectre — celle que D-06
+  juge rédhibitoire pour les coupons — a largement disparu.
+- Dixon-Coles ne réglant aucun hyperparamètre sur la validation, réserver
+  2024/25 à cet usage revenait à jeter 380 matchs.
+- **Aucun rendement mesurable** : 2025/26 est entrée sans cotes. Les stratégies
+  `edge_5pct` et `edge_2pct` retiennent zéro pari.
+
+### Constat le plus important
+**Le moteur ne consomme pas les features.** `market_assembly` lit deux colonnes
+sur trente-huit. Les 878 xG et les quinze variables de mi-temps produits la
+veille n'atteignent aucun modèle. La comparaison « avec et sans xG » annoncée
+la veille était donc impossible — elle n'aurait pas dû être proposée sans cette
+vérification.
+
+### Deux limites du jeu de test
+- Leeds United et Sunderland, jamais vues à l'entraînement, jouent 108 des 380
+  matchs (28 %).
+- Les marchés de mi-temps ne couvrent que 306 matchs sur 380, faute de
+  variables `ht_*` sur les premières journées.
+
+### Commit
+- `docs:` seulement. Les modèles vivent sous `data/models/`, qui n'a jamais été
+  versionné — les y ajouter serait une décision d'architecture distincte.
+
+### Décision
+- Modèle à deux saisons retenu.
+
+### Prochaine étape
+Trancher : ouvrir la couche qui consomme les features (D-05), ou poursuivre le
+lot C avec l'étape 9.
+
+---
+
 ## 2026-09-07 (nuit) — Recalcul des features ; le module xG était mort
 
 ### Agent

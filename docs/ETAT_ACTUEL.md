@@ -54,23 +54,55 @@ backtest. Vérifié sur les données réelles : 760 matchs importés avec leurs
 cotes Over/Under, modèle entraîné sur 2023/24, 10 160 prédictions générées et
 réglées sur 2024/25, rapport de backtest complet.
 
-## Première évaluation hors échantillon
-Modèle Dixon-Coles entraîné sur 2023/24, appliqué aux 380 matchs de 2024/25 :
+## Évaluation sur 2025/26 — saison jamais vue (08/09/2026)
 
-| Marché | Accuracy | Log-loss | Brier | AUC | ROI |
-|---|---|---|---|---|---|
-| 1N2 | 0,508 | 0,590 | 0,201 | 0,693 | −3,16 % |
-| Over/Under | 0,721 | 0,539 | 0,182 | 0,805 | −2,16 % |
-| 1N2 1re mi-temps | 0,393 | 0,621 | 0,215 | 0,609 | — |
-| BTTS | 0,518 | 0,735 | 0,266 | 0,537 | — |
+Dixon-Coles entraîné sur **2023/24 + 2024/25** (760 matchs, 23 équipes),
+appliqué aux 380 matchs de 2025/26. Découpage signalé au titre de D-02 :
+`--train-end 2025-06-30`, faute des saisons 2015/16 → 2022/23.
 
-Références : pari naïf sur le domicile **−16,60 %**, favori du marché
-**−3,56 %**. Le modèle bat nettement la stratégie naïve et se tient au niveau
-du marché, sur une seule saison d'entraînement.
+| Marché | matchs | Accuracy | Log-loss | Brier | AUC | Err. calibr. |
+|---|---|---|---|---|---|---|
+| 1N2 | 380 | 0,463 | 0,610 | 0,210 | 0,645 | 0,046 |
+| Over/Under | 380 | 0,732 | 0,544 | 0,181 | 0,752 | — |
+| Over/Under 1re MT | 306 | 0,764 | 0,525 | 0,174 | **0,782** | — |
+| 1N2 1re mi-temps | 306 | 0,418 | 0,608 | 0,210 | 0,630 | — |
+| Mi-temps prolifique | 306 | 0,441 | 0,620 | 0,215 | 0,608 | — |
+| BTTS | 380 | 0,539 | 0,729 | 0,263 | 0,534 | — |
 
-Sa courbe de calibration montre un excès de confiance dans le haut du spectre
-(annoncé 0,84 → observé 0,67) : c'est ce que la calibration doit corriger, une
-fois qu'il y aura une saison de validation distincte.
+**Aucun rendement n'est mesurable** : 2025/26 est entrée sans cotes. Les
+stratégies `edge_5pct` et `edge_2pct` retiennent zéro pari, et les références
+naïve et marché sont indisponibles. Seules log-loss, Brier et AUC valent ici.
+
+### Une saison d'entraînement de plus vaut mieux qu'une saison de validation
+Comparé au même protocole entraîné sur 2023/24 seule, l'ajout de 2024/25
+améliore **22 des 24 comparaisons** (4 métriques × 6 marchés) — seule l'AUC du
+BTTS recule, de 0,545 à 0,534. Les écarts sont petits un à un ; leur cohérence
+ne l'est pas.
+
+Le gain décisif est la **calibration, de 0,066 à 0,046**, et il porte là où il
+comptait :
+
+| Annoncé | 1 saison | 2 saisons |
+|---|---|---|
+| 0,55 | 0,40 | **0,48** |
+| 0,64 | 0,57 | **0,66** |
+| 0,74 | 0,65 | **0,75** |
+
+La surconfiance du haut du spectre, que D-06 identifie comme rédhibitoire pour
+les coupons puisqu'elle se compose en puissance, a largement disparu.
+
+Dixon-Coles ne réglant aucun hyperparamètre sur la validation, réserver une
+saison à cet usage revenait à jeter 380 matchs. Le découpage à trois volets
+reprendra son sens le jour où une couche à hyperparamètres existera.
+
+### Deux limites à connaître avant de lire ces chiffres
+- **Leeds United et Sunderland n'ont jamais été vues à l'entraînement** — elles
+  montent en 2025/26 — et jouent 108 des 380 matchs, soit 28 % du jeu de test.
+  Le modèle n'a aucune force estimée pour elles.
+- **Les marchés de mi-temps ne couvrent que 306 matchs sur 380.** Les 74
+  manquants sont ceux dont les variables `ht_*` sont vides : les premières
+  journées, où aucun taux n'est fondé. Pas de variable, pas de prédiction —
+  cohérent, mais cela coûte 19 % des matchs sur 15 des 31 sélections.
 
 ## Travaux terminés
 - **Foreign keys SQLite**, **index déclarés dans l'ORM** et **contraintes
@@ -179,9 +211,24 @@ n'a été introduit : la règle découle de la définition de la variable, et le
 valeurs reviendront d'elles-mêmes le jour où la source sera complétée.
 
 ## Prochaine action
-**Entraîner** (`python scripts/train_models.py`) sur 2023/24, seule saison
-intégralement décrite — xG compris — puis lancer le pipeline de prédiction. Un
-entraînement avec et sans xG donnera la première mesure de l'apport d'Understat.
+**Le moteur ne consomme pas les features.** C'est le constat le plus important
+de la journée du 07/09. Sur les 38 colonnes de `features`, `market_assembly`
+n'en lit que deux — `goals_for_avg_5` et `goals_against_avg_5`. Les 878 xG
+importés et les quinze variables de mi-temps calculées **n'atteignent aucun
+modèle** : Dixon-Coles s'estime sur les buts seuls, conformément à D-05, et la
+couche de gradient boosting que cette décision qualifie d'« éventuelle »
+n'existe pas.
+
+Tant qu'elle n'existe pas, mesurer l'apport d'Understat est impossible, et la
+question laissée ouverte par l'étape 6 b — l'effet des variables de mi-temps sur
+l'AUC du 1N2 de première période — reste sans réponse.
+
+Deux directions, à trancher :
+1. **Ouvrir la couche qui consomme les features** (D-05). C'est ce qui rendrait
+   utile le travail des étapes 6 b et 8. Le hors-périmètre de `ROADMAP.md`
+   l'autorise depuis la fin de l'étape 6.
+2. **Poursuivre le lot C** — étape 9, l'API et l'interface d'administration —
+   en laissant les features en attente d'un consommateur.
 
 ### L'import des 12 saisons reste à faire
 `football-data.co.uk` renvoie un **503** depuis toutes les machines essayées
