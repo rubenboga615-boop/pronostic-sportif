@@ -132,6 +132,8 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         "Ath Bilbao": "Athletic Bilbao",
         "Ath Madrid": "Atletico Madrid",
         "Espanol": "Espanyol",
+        "Oviedo": "Oviedo",
+        "Real Oviedo": "Oviedo",
     },
     "I1": {
         "AC Milan": "AC Milan",
@@ -177,6 +179,9 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         # Football-Data écrit « Milan » pour l'AC Milan ; « Inter » est
         # une entrée distincte, déjà présente.
         "Milan": "AC Milan",
+        "Pisa": "Pisa",
+        # Football-Data écrit « Spal » ; le canonique est « SPAL ».
+        "Spal": "SPAL",
     },
     "D1": {
         "Bayern Munich": "Bayern Munich",
@@ -304,6 +309,7 @@ TEAM_ALIASES: dict[str, dict[str, str]] = {
         # Abréviations Football-Data rencontrées en 2024/25.
         "Auxerre": "Auxerre",
         "St Etienne": "Saint-Etienne",
+        "Paris FC": "Paris FC",
     },
 }
 
