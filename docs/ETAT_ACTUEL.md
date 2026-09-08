@@ -39,28 +39,41 @@ backtest. Vérifié sur les données réelles : 760 matchs importés avec leurs
 cotes Over/Under, modèle entraîné sur 2023/24, 10 160 prédictions générées et
 réglées sur 2024/25, rapport de backtest complet.
 
-## Corpus au 08/09/2026 — 5 932 matchs, Premier League complète
+## Corpus au 08/09/2026 — 17 251 matchs, cinq championnats
 
-football-data.co.uk restant injoignable (503), les CSV viennent de **deux
-miroirs GitHub indépendants** : `jokecamp/FootballData` et
-`nemesistip-cloud/vit`. Leur fichier commun `E0_1920.csv` a le **même MD5** —
-les deux recopient la même source, bit à bit.
+football-data.co.uk restant injoignable (503), les CSV viennent de **trois
+miroirs GitHub indépendants** : `jokecamp/FootballData`,
+`nemesistip-cloud/vit` et `wlrwx/football-engine`. Le fichier `E0_1920.csv`
+commun aux deux premiers a le **même MD5** — ils recopient la même source, bit
+à bit.
 
-Authenticité vérifiée par croisement avec Understat avant chaque import :
-**2 254 + 1 140 matchs comparés, zéro discordance de score**.
+Authenticité vérifiée par croisement avec Understat **avant chaque import** :
+plus de **13 000 matchs comparés, zéro discordance de score**.
 
-| | avant | après |
+| | 07/09 | 08/09 |
 |---|---|---|
-| Matchs | 1 140 | **5 932** |
-| Cotes | 9 285 | **114 385** |
-| Lignes de xG | 878 | **8 140** |
-| Lignes de features | 2 280 | **11 864** |
+| Matchs | 1 140 | **17 251** |
+| Cotes | 9 285 | **363 372** |
+| Lignes de xG | 878 | **28 004** |
+| Équipes | 23 | **156** |
 
-**La Premier League est complète : douze saisons continues, 2014/15 →
-2025/26.** Le corpus fixé par D-01 est atteint pour ce championnat.
+| Championnat | Saisons | Matchs | Période |
+|---|---|---|---|
+| Premier League | **12** | 4 560 | 2014/15 → 2025/26 |
+| La Liga | 9 | 3 420 | 2017/18 → 2025/26 |
+| Serie A | 9 | 3 420 | 2017/18 → 2025/26 |
+| Ligue 1 | 9 | 3 097 | 2017/18 → 2025/26 |
+| Bundesliga | 9 | 2 754 | 2017/18 → 2025/26 |
 
-Les quatre autres n'ont que **2024/25** — une seule saison, entrée pour
-préparer la suite. Elle ne suffit pas à entraîner : voir la limite ci-dessous.
+Le corpus visé par la feuille de route (~19 900 matchs) est atteint à 87 %, et
+**les cinq championnats sont désormais entraînables** — c'était la limite
+bloquante de la veille. Le jeu de test compte **3 124 matchs avec cotes**, soit
+environ 9 400 paris : au-delà du seuil de 2 200 nécessaire pour établir un ROI
+de +5 %.
+
+Les structures reflètent l'histoire réelle et non un remplissage : Ligue 1 à
+279 matchs en 2019/20 (saison écourtée par le COVID), passage à 18 clubs en
+2023/24, Bundesliga à 306 matchs depuis toujours.
 
 ## Protocole D-02 exécuté pour la première fois
 
