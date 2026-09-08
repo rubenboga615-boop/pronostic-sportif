@@ -125,14 +125,23 @@ def generate_match_predictions(
     half_models=None,
     data_cutoff_at=None,
     source_versions: str | None = None,
+    calibrateurs=None,
 ) -> list[Prediction]:
     """Générer et persister les prédictions d'un match (anti-fuite, idempotent).
 
-    Enchaîne : contexte anti-fuite (``build_match_predictions``) → persistance
-    idempotente (``persist_predictions``). Un second appel sur le même match met
-    à jour les lignes existantes sans créer de doublon.
+    Enchaîne : contexte anti-fuite (``build_match_predictions``) → calibration
+    éventuelle → persistance idempotente (``persist_predictions``). Un second
+    appel sur le même match met à jour les lignes existantes sans doublon.
+
+    La calibration s'applique **avant** l'écriture : D-10 interdit de retoucher
+    une probabilité persistée hors migration versionnée, et une probabilité
+    corrigée après coup ne serait plus celle qui a servi à calculer l'edge.
     """
     predictions = build_match_predictions(session, match_id, model=model, half_models=half_models)
+    if calibrateurs:
+        from models.calibration_appliquee import appliquer_calibration
+
+        predictions = appliquer_calibration(predictions, calibrateurs)
     return persist_predictions(
         session,
         match_id,
@@ -151,6 +160,7 @@ def generate_predictions_for_matches(
     half_models=None,
     data_cutoff_at=None,
     source_versions: str | None = None,
+    calibrateurs=None,
 ) -> dict[str, Any]:
     """Générer et persister les prédictions pour une liste explicite de matchs.
 
@@ -184,6 +194,7 @@ def generate_predictions_for_matches(
                 half_models=half_models,
                 data_cutoff_at=data_cutoff_at,
                 source_versions=source_versions,
+                calibrateurs=calibrateurs,
             )
             succeeded.append(match_id)
             total_predictions += len(results)
@@ -291,6 +302,9 @@ def run_prediction_pipeline(
     half_models=None,
     data_cutoff_at=None,
     source_versions: str | None = None,
+    valoriser: bool = True,
+    cotes_de_cloture: bool = False,
+    calibrer: bool = True,
 ) -> dict[str, Any]:
     """Exécuter le pipeline de prédiction.
 
@@ -307,6 +321,20 @@ def run_prediction_pipeline(
     Args:
         engine: Moteur SQLAlchemy. Si ``None``, utilise ``app.database.engine``.
         model_version: Version du modèle (défaut ``"poisson-v1"``).
+        calibrer: appliquer les calibrateurs enregistrés pour cette version de
+            modèle, s'il en existe. Sans eux le pipeline utilise les
+            probabilités brutes — comportement d'avant la calibration, pas une
+            erreur. Mesuré le 08/09/2026 : la calibration récupérait dix points
+            de ROI sur la sélection à 5 % du 1N2.
+        valoriser: confronter les prédictions aux cotes du marché juste après
+            les avoir écrites, pour renseigner ``offered_odds`` et ``edge``.
+            Sans cette étape, un edge n'existe pas et aucun rendement n'est
+            calculable — le module de valorisation était écrit depuis
+            longtemps et n'était appelé par aucun pipeline.
+        cotes_de_cloture: valoriser contre les cotes de clôture plutôt que
+            d'ouverture. **Réservé au backtest** : la clôture est relevée au
+            coup d'envoi, elle n'est pas disponible au moment de prédire pour
+            de vrai. Une exécution quotidienne doit garder ``False``.
         reference_date: Date de coupure des données (obligatoire, keyword-only).
             L'appelant la fournit explicitement — typiquement ``datetime.now()``
             pour une exécution quotidienne, ou une date fixe dans les tests.
@@ -354,6 +382,12 @@ def run_prediction_pipeline(
                 "predictions_created_or_updated": 0,
             }
 
+        calibrateurs = None
+        if calibrer:
+            from models.calibration_appliquee import charger_calibrateurs
+
+            calibrateurs = charger_calibrateurs(model_version) or None
+
         # Étape 2 : Génération des prédictions
         logger.info("Étape 2 : Génération des prédictions...")
         report = generate_predictions_for_matches(
@@ -363,6 +397,7 @@ def run_prediction_pipeline(
             model=model,
             half_models=half_models,
             data_cutoff_at=reference_date,
+            calibrateurs=calibrateurs,
         )
 
         logger.info(
@@ -374,6 +409,27 @@ def run_prediction_pipeline(
         if report["failed"]:
             for f in report["failed"]:
                 logger.warning(f"  Match {f['match_id']} échoué : {f['error']}")
+
+        # Étape 3 : confrontation au marché. Une prédiction sans prix ne peut
+        # produire ni edge ni rendement ; la laisser en l'état revient à
+        # produire des probabilités qu'on ne pourra jamais évaluer.
+        if valoriser:
+            logger.info("Étape 3 : Valorisation contre les cotes du marché...")
+            if cotes_de_cloture:
+                logger.warning(
+                    "  Cotes de CLÔTURE : réservé au backtest, elles ne sont pas "
+                    "connues au moment de prédire."
+                )
+            from evaluation.pricing import valoriser_toutes_les_predictions
+
+            valorisation = valoriser_toutes_les_predictions(
+                session, model_version, closing=cotes_de_cloture
+            )
+            report["valorisation"] = valorisation
+            logger.info(
+                f"  {valorisation['predictions_valorisees']} prédictions valorisées "
+                f"sur {valorisation['matchs']} matchs"
+            )
 
         logger.info("=== Fin du pipeline de prédiction ===")
         return report
