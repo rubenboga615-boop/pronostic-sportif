@@ -36,6 +36,54 @@ Description précise.
 
 ---
 
+## 2026-09-08 (matin) — La calibration n'était pas le problème du 1N2
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Faire les deux points annoncés : calibration sur fenêtre glissante, puis
+compléter les championnats.
+
+### Actions effectuées
+- Fichiers créés : `models/calibration_glissante.py` (+ 9 tests)
+- Calibrateur réajusté à chaque journée sur le seul passé connu, deux formes
+  de fenêtre (croissante et bornée), comparées sur le même jeu de test.
+- Anti-fuite vérifiée par mouchard : une seconde moitié empoisonnée ne doit
+  rien changer à la première.
+
+### Résultats
+- Erreur de calibration du 1N2 : 0,0592 -> **0,0339** (-41 %).
+- **Et le rendement ne bouge pas** : `edge >= 5 %` reste à -22,5 %, contre
+  -21,8 % sans calibration. L'hypothèse qui a motivé ce module est donc
+  partiellement fausse, et c'est l'enseignement principal.
+- Sur l'Over/Under, la calibration change le signe : -5,35 % -> **+3,97 %**.
+  Une calibration **figée** y suffit ; la glissante n'apporte rien de plus.
+
+### Le premier résultat statistiquement établi du projet
+Bootstrap à 95 % sur le jeu de test :
+
+- **1N2, `edge >= 5 %` : -21,23 %, IC [-37,95 ; -2,10] -> négatif, démontré.**
+- Over/Under, `edge >= 5 %` : +3,97 %, IC [-11,36 ; +19,74] -> nul.
+
+Sélectionner sur l'edge du 1N2 fait perdre de l'argent, et ce n'est plus une
+impression. Aucun générateur de coupons ne devra retenir de sélection 1N2 sur
+ce critère.
+
+### Ce que ça dit du moteur
+Sur le 1N2, Dixon-Coles n'a aucune information que le marché n'ait déjà. Mieux
+calibrer ne crée pas d'avantage là où il n'y en a pas. L'Over/Under, où le
+modèle atteint 0,752 d'AUC contre 0,640, reste la seule piste crédible.
+
+### Commit
+- `feat:` le module, `docs:` les mesures.
+
+### Prochaine étape
+Compléter les quatre autres championnats — trois saisons chacun au minimum —
+pour donner à l'Over/Under le volume qui permettrait de trancher.
+
+---
+
 ## 2026-09-08 (nuit, suite) — Corpus × 5,2 et premier protocole D-02
 
 ### Agent

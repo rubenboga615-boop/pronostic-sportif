@@ -9,7 +9,7 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **580 réussis, 0 ignoré** (scikit-learn installé : les
+- Suite de tests : **589 réussis, 0 ignoré** (scikit-learn installé : les
   quatre tests de calibration ne s'ignorent plus) (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
@@ -92,12 +92,53 @@ l'Over/Under, là où suivre le favori du marché ne coûte que 0,88 %. Et la
 sélection par edge reste contre-productive sur ce modèle : plus le seuil monte,
 plus le rendement baisse.
 
-La cause tient dans une colonne du tableau : l'erreur de calibration du 1N2 vaut
-0,067 sur le test alors qu'elle tombait à 0,012 sur la validation. **La
-calibration apprise sur une saison ne se transporte pas telle quelle sur la
-suivante** — le biais du modèle n'est pas stable dans le temps. C'est la piste
-la plus sérieuse pour la suite : calibrer sur une fenêtre glissante plutôt que
-sur une saison figée.
+### Mieux calibrer n'améliore pas le rendement du 1N2
+
+La piste de la fenêtre glissante a été implémentée et mesurée
+(`models/calibration_glissante.py`, calibrateur réajusté à chaque journée sur
+le seul passé connu). Elle tient sa promesse **sur la calibration**, et pas du
+tout **sur le rendement** :
+
+| Probabilités | err. calibr. | ROI `edge ≥ 5 %` |
+|---|---|---|
+| brutes | 0,0592 | −21,78 % |
+| figée (2023/24) | 0,0597 | −21,23 % |
+| glissante, fenêtre croissante | **0,0346** | −22,55 % |
+| glissante, 2 000 observations | **0,0339** | −23,05 % |
+
+L'erreur de calibration baisse de 41 %, et le rendement ne bouge pas — il
+empire même légèrement. **Sur le 1N2, le problème n'était donc pas la
+calibration.** Mieux calibrer rapproche les probabilités du modèle de la
+vérité, mais celles du marché en sont déjà plus proches : l'écart résiduel est
+du bruit, et le sélectionner coûte la marge du bookmaker.
+
+Sur l'Over/Under en revanche, la calibration change le signe — et une simple
+calibration figée y suffit :
+
+| Probabilités | err. calibr. | ROI `edge ≥ 5 %` |
+|---|---|---|
+| brutes | 0,0387 | −5,35 % |
+| figée (2023/24) | 0,0217 | **+3,97 %** |
+| glissante | 0,0205 | +3,17 % |
+
+### Le premier résultat statistiquement établi du projet, et il est négatif
+
+Intervalles de confiance à 95 % par bootstrap, sur le jeu de test :
+
+| Marché | seuil | paris | ROI | IC 95 % | verdict |
+|---|---|---|---|---|---|
+| 1N2 | ≥ 5 % | 301 | −21,23 % | [−37,95 ; **−2,10**] | **négatif, démontré** |
+| 1N2 | ≥ 2 % | 416 | −13,68 % | [−29,01 ; +2,85] | nul |
+| Over/Under | ≥ 5 % | 259 | +3,97 % | [−11,36 ; +19,74] | nul |
+| Over/Under | ≥ 2 % | 332 | +2,07 % | [−11,41 ; +15,55] | nul |
+
+**Sélectionner sur l'edge du 1N2 fait perdre de l'argent, et ce n'est plus une
+impression.** C'est la première conclusion que ce projet peut défendre. Elle
+ferme une porte : quel que soit le générateur de coupons à venir, il ne devra
+pas retenir de sélection 1N2 sur ce critère.
+
+L'Over/Under garde un signe positif constant sur tous les seuils, mais reste
+indéterminé faute de volume.
 
 ### ⚠️ Les quatre autres championnats ne sont pas mesurables
 `train_models.py` entraîne **par compétition**, et la Liga, la Serie A, la
