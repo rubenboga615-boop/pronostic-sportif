@@ -235,7 +235,9 @@ def charger_modele(model_version: str, registry_dir: str | None = None):
     return DixonColesModel.from_dict(parametres)
 
 
-def _select_matches_ready_for_prediction(session, reference_date) -> list[int]:
+def _select_matches_ready_for_prediction(
+    session, reference_date, competition_id: int | None = None
+) -> list[int]:
     """Sélectionner les matchs pour lesquels générer des prédictions.
 
     Règle temporelle (date de coupure) :
@@ -254,6 +256,11 @@ def _select_matches_ready_for_prediction(session, reference_date) -> list[int]:
       testable).
     - Les matchs sans ``match_date`` sont exclus.
     - Les matchs sans ``Feature`` domicile **et** extérieure sont exclus.
+    - ``competition_id`` restreint la sélection à un championnat. **À
+      renseigner dès qu'un modèle par compétition existe** : les forces
+      d'équipes d'un Dixon-Coles sont propres à son championnat, et lui donner
+      des matchs d'ailleurs produit des prédictions de repli qu'aucune erreur
+      ne signale.
     - Le tri chronologique (``match_date`` puis ``id``) rend le résultat
       déterministe ; ``id`` n'est pas utilisé comme indicateur chronologique.
 
@@ -261,6 +268,7 @@ def _select_matches_ready_for_prediction(session, reference_date) -> list[int]:
         session: Session SQLAlchemy.
         reference_date: Date de coupure des données. Seuls les matchs avec
             ``match_date > reference_date`` sont retenus.
+        competition_id: ne retenir que les matchs de ce championnat.
 
     Returns:
         Liste triée des ``match_id`` éligibles.
@@ -281,15 +289,17 @@ def _select_matches_ready_for_prediction(session, reference_date) -> list[int]:
     fh = orm.aliased(Feature)
     fa = orm.aliased(Feature)
 
-    rows = (
+    requete = (
         session.query(Match.id)
         .join(fh, (fh.match_id == Match.id) & (fh.team_id == Match.home_team_id))
         .join(fa, (fa.match_id == Match.id) & (fa.team_id == Match.away_team_id))
         .filter(Match.match_date.isnot(None))
         .filter(Match.match_date > reference_date)
-        .order_by(Match.match_date, Match.id)
-        .all()
     )
+    if competition_id is not None:
+        requete = requete.filter(Match.competition_id == competition_id)
+
+    rows = requete.order_by(Match.match_date, Match.id).all()
     return [row[0] for row in rows]
 
 
@@ -305,6 +315,7 @@ def run_prediction_pipeline(
     valoriser: bool = True,
     cotes_de_cloture: bool = False,
     calibrer: bool = True,
+    competition_id: int | None = None,
 ) -> dict[str, Any]:
     """Exécuter le pipeline de prédiction.
 
@@ -321,6 +332,9 @@ def run_prediction_pipeline(
     Args:
         engine: Moteur SQLAlchemy. Si ``None``, utilise ``app.database.engine``.
         model_version: Version du modèle (défaut ``"poisson-v1"``).
+        competition_id: ne prédire que ce championnat. Indispensable dès que
+            les modèles sont entraînés par compétition — un Dixon-Coles ne
+            connaît que les équipes de son championnat.
         calibrer: appliquer les calibrateurs enregistrés pour cette version de
             modèle, s'il en existe. Sans eux le pipeline utilise les
             probabilités brutes — comportement d'avant la calibration, pas une
@@ -370,7 +384,9 @@ def run_prediction_pipeline(
         # Étape 1 : Sélection des matchs prêts (match_date > reference_date)
         logger.info("Étape 1 : Sélection des matchs prêts...")
         logger.info(f"  Règle temporelle : match_date > {reference_date.isoformat()}")
-        match_ids = _select_matches_ready_for_prediction(session, reference_date)
+        match_ids = _select_matches_ready_for_prediction(
+            session, reference_date, competition_id=competition_id
+        )
         logger.info(f"  {len(match_ids)} matchs sélectionnés")
 
         if not match_ids:

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from app.models import Base, Competition, Feature, Match, Prediction, Team
+from app.models import Base, Competition, Feature, Match, Prediction, Season, Team
 from pipelines.prediction_pipeline import (
     _select_matches_ready_for_prediction,
     run_prediction_pipeline,
@@ -596,3 +596,58 @@ class TestOriginalDatabaseUntouched:
         assert sha_before == sha_after
         assert size_before == size_after
         assert mtime_before == mtime_after
+
+
+class TestFiltreParCompetition:
+    """Les modèles sont entraînés par compétition : un Dixon-Coles ne connaît
+    que les équipes de son championnat. Lui donner des matchs d'ailleurs
+    produit des prédictions de repli qu'aucune erreur ne signale.
+    """
+
+    def test_seuls_les_matchs_du_championnat_demande_sont_retenus(self, tmp_path):
+        engine = _make_db(tmp_path)
+        with Session(engine) as session:
+            for identifiant, code in ((1, "E0"), (2, "SP1")):
+                session.add(Competition(id=identifiant, name=code, country="X", provider_code=code))
+                session.add(Season(id=identifiant, competition_id=identifiant, season_name="2425"))
+                session.add(
+                    Team(
+                        id=identifiant * 10,
+                        canonical_name=f"A{code}",
+                        provider="football_data",
+                    )
+                )
+                session.add(
+                    Team(
+                        id=identifiant * 10 + 1,
+                        canonical_name=f"B{code}",
+                        provider="football_data",
+                    )
+                )
+            session.flush()
+
+            for identifiant, comp in ((100, 1), (200, 2)):
+                session.add(
+                    Match(
+                        id=identifiant,
+                        provider="football_data",
+                        competition_id=comp,
+                        season_id=comp,
+                        match_date=datetime(2025, 1, 15),
+                        home_team_id=comp * 10,
+                        away_team_id=comp * 10 + 1,
+                    )
+                )
+                for team_id in (comp * 10, comp * 10 + 1):
+                    session.add(Feature(match_id=identifiant, team_id=team_id))
+            session.commit()
+
+        with Session(engine) as s:
+            coupure = datetime(2024, 1, 1)
+            tous = _select_matches_ready_for_prediction(s, coupure)
+            e0 = _select_matches_ready_for_prediction(s, coupure, competition_id=1)
+            sp1 = _select_matches_ready_for_prediction(s, coupure, competition_id=2)
+
+        assert set(tous) == {100, 200}
+        assert e0 == [100]
+        assert sp1 == [200]
