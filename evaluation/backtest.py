@@ -54,7 +54,8 @@ REQUETE_EVALUATION = """
            r.actual_outcome,
            m.match_date,
            m.competition_id,
-           m.season_id
+           m.season_id,
+           s.season_name
       FROM predictions p
       JOIN actual_results r
         ON r.match_id = p.match_id
@@ -62,6 +63,8 @@ REQUETE_EVALUATION = """
        AND r.selection = p.selection
       JOIN matches m
         ON m.id = p.match_id
+      LEFT JOIN seasons s
+        ON s.id = m.season_id
 """
 
 
@@ -85,17 +88,40 @@ def chronological_split(
     return train, validation, test, test_recent
 
 
-def charger_evaluation(session, model_version: str | None = None) -> pd.DataFrame:
+def charger_evaluation(
+    session,
+    model_version: str | None = None,
+    saisons: list[str] | None = None,
+) -> pd.DataFrame:
     """Joindre prédictions et résultats réglés, un pour un.
 
     La jointure porte sur ``(match_id, marché, sélection)`` : c'est la clé
     logique commune, et la seule qui associe chaque prédiction à son issue.
+
+    Args:
+        model_version: ne retenir que les prédictions de cette version.
+        saisons: ne retenir que ces saisons (``["2425", "2526"]``). **À
+            renseigner pour toute mesure de performance** : une version de
+            modèle porte aussi les prédictions de sa saison de calibration et
+            de son entraînement, et les agréger avec le jeu de test gonfle le
+            résultat sans qu'aucune erreur ne soit levée. Le défaut — tout
+            charger — ne convient qu'à une inspection.
     """
     requete = REQUETE_EVALUATION
     params: dict[str, Any] = {}
+    conditions: list[str] = []
     if model_version is not None:
-        requete += " WHERE p.model_version = :model_version"
+        conditions.append("p.model_version = :model_version")
         params["model_version"] = model_version
+    if saisons:
+        marques = []
+        for i, saison in enumerate(saisons):
+            cle = f"saison_{i}"
+            marques.append(f":{cle}")
+            params[cle] = saison
+        conditions.append(f"s.season_name IN ({', '.join(marques)})")
+    if conditions:
+        requete += " WHERE " + " AND ".join(conditions)
 
     df = pd.read_sql_query(requete, session.get_bind(), params=params)
     if not df.empty:

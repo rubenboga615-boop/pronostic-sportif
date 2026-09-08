@@ -14,7 +14,16 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.models import ActualResult, Base, Competition, Match, OddsSnapshot, Prediction, Team
+from app.models import (
+    ActualResult,
+    Base,
+    Competition,
+    Match,
+    OddsSnapshot,
+    Prediction,
+    Season,
+    Team,
+)
 from evaluation.backtest import (
     _accuracy_par_groupe,
     charger_evaluation,
@@ -701,3 +710,80 @@ class TestDependancesOptionnelles:
 
         assert not (noyau & {"scikit-learn", "statsmodels", "streamlit", "fastapi", "uvicorn"})
         assert {"pandas", "numpy", "scipy", "sqlalchemy", "loguru"} <= noyau
+
+
+class TestFiltreDeSaison:
+    """Une version de modèle porte aussi les prédictions de sa saison de
+    calibration. Les agréger avec le jeu de test gonfle le résultat sans
+    qu'aucune erreur ne soit levée — constaté le 08/09/2026, où le backtest
+    mêlait 2023/24 (calibration) à 2024/25 et 2025/26 (test).
+    """
+
+    @pytest.fixture
+    def base_deux_saisons(self, tmp_path):
+        moteur = create_engine(f"sqlite:///{tmp_path / 'saisons.db'}")
+        Base.metadata.create_all(moteur)
+        with Session(moteur) as session:
+            session.add_all(
+                [
+                    Competition(id=1, name="Test", country="Test", provider_code="E0"),
+                    Season(id=1, competition_id=1, season_name="2324"),
+                    Season(id=2, competition_id=1, season_name="2425"),
+                    Team(id=1, canonical_name="A", provider="football_data"),
+                    Team(id=2, canonical_name="B", provider="football_data"),
+                ]
+            )
+            session.flush()
+            for identifiant, saison in ((1, 1), (2, 2)):
+                session.add(
+                    Match(
+                        id=identifiant,
+                        provider="football_data",
+                        competition_id=1,
+                        season_id=saison,
+                        match_date=datetime(2024, 1, identifiant + 1),
+                        home_team_id=1,
+                        away_team_id=2,
+                        home_goals=1,
+                        away_goals=0,
+                    )
+                )
+                session.add(
+                    Prediction(
+                        match_id=identifiant,
+                        model_version="v1",
+                        market="1N2",
+                        selection="home",
+                        probability=0.5,
+                        fair_odds=2.0,
+                    )
+                )
+                session.add(
+                    ActualResult(
+                        match_id=identifiant,
+                        market="1N2",
+                        selection="home",
+                        actual_outcome="won",
+                    )
+                )
+            session.commit()
+        return moteur
+
+    def test_sans_filtre_toutes_les_saisons_sont_chargees(self, base_deux_saisons):
+        with Session(base_deux_saisons) as session:
+            df = charger_evaluation(session, "v1")
+
+        assert sorted(df["season_name"].unique()) == ["2324", "2425"]
+
+    def test_le_filtre_ne_retient_que_les_saisons_demandees(self, base_deux_saisons):
+        with Session(base_deux_saisons) as session:
+            df = charger_evaluation(session, "v1", saisons=["2425"])
+
+        assert list(df["season_name"].unique()) == ["2425"]
+        assert len(df) == 1
+
+    def test_une_saison_inconnue_ne_rend_rien(self, base_deux_saisons):
+        with Session(base_deux_saisons) as session:
+            df = charger_evaluation(session, "v1", saisons=["1999"])
+
+        assert df.empty
