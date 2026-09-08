@@ -9,7 +9,7 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **562 réussis, 0 ignoré** (scikit-learn installé : les
+- Suite de tests : **580 réussis, 0 ignoré** (scikit-learn installé : les
   quatre tests de calibration ne s'ignorent plus) (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
@@ -246,11 +246,36 @@ dont la saison se déduit des dates. Toute source retenue doit être **croisée
 avec Understat avant import**, comme les six saisons anglaises l'ont été
 (2 254 matchs, zéro discordance).
 
-### Ce qui reste à brancher
-La calibration a été appliquée **à la main** : `models/calibration.py` n'est
-toujours pas dans le chemin du pipeline, pas plus que
-`evaluation/pricing.py`. Trois modules corrects et non raccordés, c'est un
-motif — à traiter comme tel.
+### Le pipeline fait désormais les trois étapes lui-même
+Les trois modules orphelins sont raccordés. `run_prediction_pipeline` enchaîne
+contexte anti-fuite → **calibration** → **valorisation**, sans script manuel.
+
+- La calibration s'applique **avant** la persistance : D-10 interdit de
+  retoucher une probabilité écrite, et une probabilité corrigée après coup ne
+  serait plus celle qui a servi à calculer l'edge.
+- Un calibrateur **par marché**, et les groupes exclusifs sont renormalisés —
+  la calibration déforme chaque probabilité isolément, si bien qu'un 1N2 cesse
+  de sommer à 1, ce qui fausserait l'edge sans lever d'erreur.
+- `scripts/ajuster_calibration.py` enregistre les calibrateurs dans le registre,
+  à la version du modèle : la calibration est versionnée et rejouable.
+
+Effet mesuré **en passant par le pipeline seul**, sur le jeu de test :
+
+| Stratégie | Avant | Après |
+|---|---|---|
+| `edge ≥ 5 %` | −17,49 % | **−6,27 %** (634 paris) |
+| `edge ≥ 2 %` | −14,18 % | **−5,86 %** (858 paris) |
+| Favori du marché | −2,06 % | −0,88 % |
+| Naïf domicile | −18,35 % | −16,28 % |
+
+Le moteur ne bat toujours pas le marché, mais sa sélection a cessé de nuire.
+
+### Un défaut de mesure corrigé
+`charger_evaluation` chargeait toutes les prédictions d'une version, y compris
+celles de sa **saison de calibration** : le modèle était donc partiellement noté
+sur les données qui avaient servi à le corriger. Le paramètre `saisons` restreint
+désormais le chargement, et les chiffres ci-dessus portent sur le seul jeu de
+test.
 
 ### L'ancienne question, résolue
 **Pourquoi l'edge était-il anti-corrélé.** C'est la question qui bloque

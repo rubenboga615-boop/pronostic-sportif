@@ -36,6 +36,54 @@ Description précise.
 
 ---
 
+## 2026-09-08 (fin) — Les trois modules orphelins sont branchés
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Carte blanche.
+
+### Décision prise, et pourquoi
+Pas le corpus en premier, contrairement à ce qui avait été annoncé. Les mesures
+des deux jours précédents venaient de scripts jetables dans `/tmp` : ni
+versionnés, ni testés, ni reproductibles — le contraire de ce que D-08 exige.
+Compléter le corpus dans cet état aurait obligé à tout remesurer à la main. Les
+modules d'abord, les données ensuite.
+
+### Actions effectuées
+- Fichiers créés : `models/calibration_appliquee.py`,
+  `scripts/ajuster_calibration.py`, `tests/test_calibration_appliquee.py`
+- Fichiers modifiés : `pipelines/prediction_pipeline.py` (calibration +
+  valorisation), `evaluation/backtest.py` (filtre de saison),
+  `tests/test_evaluation.py`
+- Tests : 562 → **580**, zéro ignoré
+
+### Résultats
+- `run_prediction_pipeline` enchaîne désormais contexte anti-fuite →
+  calibration → valorisation. Plus aucun script manuel dans la boucle.
+- Calibration **avant** persistance (D-10), un calibrateur **par marché**, et
+  renormalisation des groupes exclusifs — sans elle, un 1N2 calibré ne somme
+  plus à 1 et l'edge devient faux en silence.
+- Calibrateurs enregistrés dans le registre à la version du modèle : la
+  correction est versionnée et rejouable.
+- Mesure refaite via le pipeline seul : `edge ≥ 5 %` remonte de −17,49 % à
+  **−6,27 %**, `edge ≥ 2 %` de −14,18 % à **−5,86 %**.
+
+### Un défaut de mesure découvert et corrigé
+`charger_evaluation` agrégeait la saison de **calibration** avec le jeu de test :
+le modèle était noté en partie sur les données qui l'avaient corrigé. Paramètre
+`saisons` ajouté ; les chiffres ci-dessus portent sur le seul jeu de test.
+
+### Commit
+- `feat:` le branchement, `fix:` le filtre de saison.
+
+### Prochaine étape
+Compléter le corpus. Le pipeline produit maintenant des mesures reproductibles :
+chaque ajout de données donnera un chiffre sans travail manuel.
+
+---
+
 ## 2026-09-08 (suite) — La calibration récupère dix points de ROI
 
 ### Agent
