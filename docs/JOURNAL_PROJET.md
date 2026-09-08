@@ -36,6 +36,59 @@ Description précise.
 
 ---
 
+## 2026-09-08 (nuit, suite) — Corpus × 5,2 et premier protocole D-02
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Carte blanche.
+
+### Actions effectuées
+- Second miroir trouvé : `nemesistip-cloud/vit`. Son `E0_1920.csv` a le **même
+  MD5** que celui de `jokecamp/FootballData` — deux copies indépendantes de la
+  même source, bit à bit. Validation d'authenticité gratuite.
+- Importé : E0 2020/21, 2021/22, 2022/23 (les trois saisons qui manquaient), et
+  2024/25 pour la Liga, la Serie A, la Bundesliga et la Ligue 1.
+- Neuf alias Football-Data ajoutés pour les nouveaux championnats.
+- Chaîne complète rejouée : xG, features, entraînement, calibration,
+  prédiction, règlement, backtest.
+- Base modifiée après sauvegarde vérifiée à chaque étape.
+
+### Résultats
+- Matchs 1 140 → **5 932** ; cotes 9 285 → **114 385** ; xG 878 → **8 140** ;
+  features 2 280 → **11 864**.
+- **La Premier League est complète : douze saisons continues.** Le corpus de
+  D-01 est atteint pour ce championnat.
+- Croisement Understat avant import : zéro discordance, à nouveau.
+- **Protocole D-02 exécuté pour la première fois** — entraînement 2015/16 →
+  2022/23, validation 2023/24, test 2024/25 + 2025/26.
+- Premier League : 1N2 à −2,87 % (1 140 paris), Over/Under à −1,83 % (760),
+  contre −0,88 % pour le favori du marché. **Le moteur ne bat pas le marché.**
+- La sélection par edge reste contre-productive : −8,20 % à 2 %, −15,40 % à 5 %.
+
+### Ce que le résultat apprend
+L'erreur de calibration du 1N2 vaut **0,012 en validation et 0,067 en test** :
+apprise sur une saison, la calibration ne se transporte pas sur la suivante. Le
+biais du modèle n'est pas stable dans le temps — c'est ce qui explique que
+l'edge redevienne nuisible sur le jeu de test.
+
+### Une limite à ne pas oublier
+`train_models.py` entraîne par compétition, et les quatre nouveaux championnats
+n'ont qu'une saison — postérieure à la coupure d'entraînement. Leurs 1 372
+matchs ont été prédits par un modèle appris sur la Premier League. Le backtest
+tous championnats confondus (2 982 paris, −5,72 %) **ne veut rien dire** et
+n'est pas retenu.
+
+### Commit
+- `feat:` les alias, `docs:` les mesures.
+
+### Prochaine étape
+Trois saisons par championnat, puis reprendre la calibration sur fenêtre
+glissante.
+
+---
+
 ## 2026-09-08 (fin) — Les trois modules orphelins sont branchés
 
 ### Agent

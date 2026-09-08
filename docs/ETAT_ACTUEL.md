@@ -39,74 +39,74 @@ backtest. Vérifié sur les données réelles : 760 matchs importés avec leurs
 cotes Over/Under, modèle entraîné sur 2023/24, 10 160 prédictions générées et
 réglées sur 2024/25, rapport de backtest complet.
 
-## Corpus débloqué le 08/09/2026 — 3 420 matchs
+## Corpus au 08/09/2026 — 5 932 matchs, Premier League complète
 
-football-data.co.uk restant injoignable (503), les CSV ont été récupérés sur un
-**miroir GitHub** (`jokecamp/FootballData`), au format d'origine et complets :
-mi-temps, arbitre, sept bookmakers, Over/Under 2,5 et **cotes de clôture
-Pinnacle**.
+football-data.co.uk restant injoignable (503), les CSV viennent de **deux
+miroirs GitHub indépendants** : `jokecamp/FootballData` et
+`nemesistip-cloud/vit`. Leur fichier commun `E0_1920.csv` a le **même MD5** —
+les deux recopient la même source, bit à bit.
 
-Authenticité vérifiée avant import, par croisement avec une source
-indépendante : **2 254 matchs comparés aux scores d'Understat, zéro
-discordance**.
+Authenticité vérifiée par croisement avec Understat avant chaque import :
+**2 254 + 1 140 matchs comparés, zéro discordance de score**.
 
 | | avant | après |
 |---|---|---|
-| Matchs | 1 140 | **3 420** (9 saisons) |
-| Cotes | 9 285 | **46 516** |
-| Lignes de xG | 878 | **5 386** |
-| Lignes de features | 2 280 | **6 840** |
+| Matchs | 1 140 | **5 932** |
+| Cotes | 9 285 | **114 385** |
+| Lignes de xG | 878 | **8 140** |
+| Lignes de features | 2 280 | **11 864** |
 
-Saisons en base : 2014/15 → 2019/20, puis 2023/24 → 2025/26. **Manquent
-2020/21, 2021/22 et 2022/23** : le miroir s'arrête en janvier 2021.
+**La Premier League est complète : douze saisons continues, 2014/15 →
+2025/26.** Le corpus fixé par D-01 est atteint pour ce championnat.
 
-## Rendement mesuré, et l'effet de la calibration
+Les quatre autres n'ont que **2024/25** — une seule saison, entrée pour
+préparer la suite. Elle ne suffit pas à entraîner : voir la limite ci-dessous.
 
-Protocole enfin conforme à l'esprit de D-02 : entraînement sur 2014/15 →
-2019/20 (2 214 matchs), **calibration ajustée sur 2023/24**, saison absente de
-l'entraînement, puis appliquée à 2024/25 et 2025/26. Rendement contre les cotes
-de **clôture**.
+## Protocole D-02 exécuté pour la première fois
 
-### La calibration change tout sur le 1N2
+Enfin conforme : chauffe 2014/15, **entraînement 2015/16 → 2022/23** (3 420
+matchs), **validation 2023/24** (380), **test 2024/25 + 2025/26** (760).
+Calibration ajustée sur la validation, appliquée au test par le pipeline.
+Rendement contre les **cotes de clôture**.
 
-| Marché | probabilités | toutes | edge ≥ 0 | edge ≥ 2 % | edge ≥ 5 % |
+### Premier League — le seul championnat que le modèle a appris
+
+| Marché | Accuracy | AUC | Err. calibr. | ROI | paris |
 |---|---|---|---|---|---|
-| 1N2 | brutes | −2,87 | −11,17 | −14,15 | −16,16 |
-| 1N2 | **Platt** | −2,87 | −6,25 | −5,33 | **−6,05** |
-| Over/Under | brutes | −1,83 | −3,85 | −5,15 | −7,63 |
-| Over/Under | **Platt** | −1,83 | +0,00 | +2,46 | **+6,55** |
+| 1N2 | 0,467 | 0,638 | 0,067 | **−2,87 %** | 1 140 |
+| Over/Under | 0,741 | 0,752 | 0,014 | **−1,83 %** | 760 |
+| Over/Under 1re MT | 0,756 | **0,773** | 0,041 | — | — |
+| 1N2 1re mi-temps | 0,443 | 0,620 | 0,033 | — | — |
+| Mi-temps prolifique | 0,439 | 0,612 | 0,012 | — | — |
+| BTTS | 0,526 | 0,518 | 0,005 | — | — |
 
-Platt ramène l'erreur de calibration de **0,107 à 0,044**, améliore log-loss
-(0,672 → 0,631) et Brier (0,232 → 0,219), et récupère **dix points de ROI** sur
-la sélection à 5 % du 1N2. La méthode isotonique fait moins bien (0,067) : elle
-demande plus de données, comme l'annonce son module.
+| Stratégie | Paris | ROI |
+|---|---|---|
+| `edge ≥ 2 %` | 713 | −8,20 % |
+| `edge ≥ 5 %` | 529 | **−15,40 %** |
+| Naïf domicile | 380 | −16,28 % |
+| **Favori du marché** | 380 | **−0,88 %** |
 
-Sur l'Over/Under calibré, le rendement **croît avec le seuil d'edge**
-(0,00 → +2,46 → +6,55). C'est le comportement qu'on attend d'un edge porteur
-d'information, et l'inverse exact de ce qu'on observait sans calibration.
+**Le moteur ne bat pas le marché.** Il perd 2,87 % sur le 1N2 et 1,83 % sur
+l'Over/Under, là où suivre le favori du marché ne coûte que 0,88 %. Et la
+sélection par edge reste contre-productive sur ce modèle : plus le seuil monte,
+plus le rendement baisse.
 
-### ⚠️ Mais rien n'est prouvé — les intervalles englobent zéro
+La cause tient dans une colonne du tableau : l'erreur de calibration du 1N2 vaut
+0,067 sur le test alors qu'elle tombait à 0,012 sur la validation. **La
+calibration apprise sur une saison ne se transporte pas telle quelle sur la
+suivante** — le biais du modèle n'est pas stable dans le temps. C'est la piste
+la plus sérieuse pour la suite : calibrer sur une fenêtre glissante plutôt que
+sur une saison figée.
 
-| Marché | seuil | paris | ROI | IC 95 % (bootstrap) |
-|---|---|---|---|---|
-| 1N2 | ≥ 5 % | 405 | −6,05 % | [−24,91 ; +13,97] |
-| Over/Under | ≥ 2 % | 326 | +2,46 % | [−11,05 ; +15,46] |
-| Over/Under | ≥ 5 % | 262 | **+6,55 %** | **[−9,18 ; +22,15]** |
-
-**Aucun de ces chiffres n'est statistiquement distinguable de zéro.** Le +6,55 %
-est un signe encourageant, pas un résultat. L'écart-type du gain par pari est de
-1,19 : il faudrait
-
-- **~2 200 paris** pour établir un ROI de +5 % (≈ 3 saisons),
-- ~6 100 pour +3 %,
-- ~13 600 pour +2 %.
-
-Nous en avons **262**. C'est l'argument décisif pour compléter le corpus : les
-quatre autres championnats et les saisons manquantes, non pour mieux entraîner,
-mais pour pouvoir **mesurer**.
-
-**D-06 reste non remplie** : la condition est un rendement positif *démontré*.
-Le lot E reste fermé.
+### ⚠️ Les quatre autres championnats ne sont pas mesurables
+`train_models.py` entraîne **par compétition**, et la Liga, la Serie A, la
+Bundesliga et la Ligue 1 n'ont que 2024/25 en base — aucun match avant la
+coupure d'entraînement. Leurs 1 372 matchs ont donc été prédits avec un modèle
+appris sur la **Premier League**, dont les forces d'équipes ne les décrivent
+pas. Un backtest tous championnats confondus affiche 2 982 paris et −5,72 % :
+**ce chiffre ne veut rien dire** et n'est pas retenu. Il faudra au moins trois
+saisons par championnat avant de les mesurer.
 
 ### Métriques de probabilité (760 matchs de test)
 
@@ -233,6 +233,17 @@ n'a été introduit : la règle découle de la définition de la variable, et le
 valeurs reviendront d'elles-mêmes le jour où la source sera complétée.
 
 ## Prochaine action
+**Compléter les quatre autres championnats** — il leur faut au moins trois
+saisons chacun pour être entraînables, donc mesurables. Sources : les deux
+miroirs déjà utilisés ne portent que 2024/25 pour eux ; il en faut d'autres, et
+tout candidat doit être croisé avec Understat avant import.
+
+**Puis reprendre la calibration.** Son erreur passe de 0,012 en validation à
+0,067 en test : apprise sur une saison, elle ne se transporte pas. Une fenêtre
+glissante, ou un calibrateur réajusté à chaque journée, corrigerait sans doute
+ce que la sélection par edge perd aujourd'hui.
+
+### L'ancienne action, faite
 **Compléter le corpus, pour pouvoir mesurer.** C'est désormais le seul verrou :
 le protocole tient, la calibration fonctionne, l'Over/Under montre un signe
 positif — mais 262 paris ne permettent de rien conclure. Il faut les quatre
