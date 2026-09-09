@@ -42,6 +42,13 @@ TRANCHES_DE_COTE: tuple[tuple[str, float, float], ...] = (
     ("5.00+", 5.0, float("inf")),
 )
 
+# Bornes de cote d'une stratégie par edge. En dessous, la marge du bookmaker
+# mange tout gain possible ; au-dessus, quelques coups de chance suffisent à
+# faire dire n'importe quoi au rendement. Partagées avec les intervalles de
+# confiance, qui doivent encadrer exactement les paris publiés.
+COTE_MINIMALE = 1.2
+COTE_MAXIMALE = 10.0
+
 REQUETE_EVALUATION = """
     SELECT p.match_id,
            p.model_version,
@@ -305,8 +312,8 @@ def _rendements(lignes: pd.DataFrame, edge_minimal: float = 0.0) -> dict[str, An
 def strategie_edge(
     df: pd.DataFrame,
     edge_minimal: float = 0.05,
-    cote_minimale: float = 1.2,
-    cote_maximale: float = 10.0,
+    cote_minimale: float = COTE_MINIMALE,
+    cote_maximale: float = COTE_MAXIMALE,
 ) -> dict[str, Any]:
     """Rendement d'une stratégie ne pariant que sur un avantage estimé.
 
