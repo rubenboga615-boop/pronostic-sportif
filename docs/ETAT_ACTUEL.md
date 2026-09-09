@@ -9,7 +9,7 @@ Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligu
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
 - Working tree : **propre**
-- Suite de tests : **598 réussis, 0 ignoré** (scikit-learn installé : les
+- Suite de tests : **623 réussis, 0 ignoré** (scikit-learn installé : les
   quatre tests de calibration ne s'ignorent plus) (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
@@ -146,12 +146,15 @@ Intervalles de confiance à 95 % par bootstrap, sur le jeu de test :
 | Over/Under | ≥ 2 % | 332 | +2,07 % | [−11,41 ; +15,55] | nul |
 
 **Sélectionner sur l'edge du 1N2 fait perdre de l'argent, et ce n'est plus une
-impression.** C'est la première conclusion que ce projet peut défendre. Elle
+impression.** C'est la première conclusion que ce projet a pu défendre. Elle
 ferme une porte : quel que soit le générateur de coupons à venir, il ne devra
 pas retenir de sélection 1N2 sur ce critère.
 
-L'Over/Under garde un signe positif constant sur tous les seuils, mais reste
-indéterminé faute de volume.
+Ces chiffres ne portaient que sur la Premier League, avec 259 à 416 paris.
+**Ils sont périmés** : la mesure du 09/09/2026 sur les cinq championnats
+(3 504 matchs) est plus bas dans ce document et fait autorité. L'Over/Under,
+qui gardait ici un signe positif « indéterminé faute de volume », y ressort
+négatif et démontré.
 
 ### ✅ Chaque championnat est désormais prédit par son propre modèle
 `train_models.py` entraîne **par compétition** et enregistre chaque modèle sous
@@ -310,15 +313,57 @@ valeurs qui décrivaient une forme révolue. Aucun seuil d'ancienneté arbitrair
 n'a été introduit : la règle découle de la définition de la variable, et les
 valeurs reviendront d'elles-mêmes le jour où la source sera complétée.
 
-## Prochaine action
-**Rejouer le protocole D-02 sur les cinq championnats.** Chacun a maintenant
-son corpus *et* son modèle au moment de prédire — les deux verrous sont levés.
-La question à trancher : l'Over/Under garde-t-il son signe positif sur un
-volume cinq fois supérieur ? C'est le seul marché encore crédible, et son
-intervalle de confiance actuel ([−11,36 ; +19,74]) ne permet rien de conclure.
+## Protocole D-02 sur les cinq championnats — 09/09/2026
 
-Commande : `python scripts/generate_predictions.py --version dc-final
---reference-date 2024-06-30 --cotes-de-cloture`, puis le backtest par saison.
+3 504 matchs de test, chacun prédit par le modèle de son championnat, valorisé
+contre les cotes de clôture. Bootstrap à 95 % par pari
+(`evaluation/incertitude.py`).
+
+| Marché / stratégie | Paris | ROI | IC 95 % | Verdict |
+|---|---|---|---|---|
+| 1N2 | 9 372 | −5,44 % | [−8,73 ; −2,20] | **perdant, démontré** |
+| **Over/Under** | 6 248 | **−3,46 %** | **[−6,05 ; −1,00]** | **perdant, démontré** |
+| `edge ≥ 2 %` | 6 170 | −6,76 % | [−10,51 ; −3,06] | perdant, démontré |
+| `edge ≥ 5 %` | 4 194 | −7,23 % | [−11,46 ; −2,68] | perdant, démontré |
+| Favori du marché | 3 124 | +0,33 % | [−3,19 ; +3,65] | nul |
+
+**L'Over/Under était la dernière piste crédible. Elle est morte.** Mesuré à
++3,97 % sur 262 paris, avec un intervalle [−11,36 ; +19,74] qui n'autorisait
+aucune conclusion, il ressort à −3,46 % sur 6 248 paris. Le volume n'a pas
+confirmé l'intuition : il l'a réfutée.
+
+La perte est **uniforme** : aucun des dix couples championnat × marché
+n'atteint seul la significativité, mais les dix vont dans le même sens, de
+−1,83 % à −6,70 %.
+
+| Championnat | 1N2 | Over/Under |
+|---|---|---|
+| Premier League | −2,87 % | −1,83 % |
+| Bundesliga | −4,35 % | −5,61 % |
+| Ligue 1 | −5,31 % | −3,97 % |
+| Serie A | −6,43 % | −2,28 % |
+| La Liga | −6,70 % | −3,32 % |
+
+Le moteur **classe** correctement — AUC 0,770 sur l'Over/Under de première
+mi-temps, 0,759 sur l'Over/Under, 0,669 sur le 1N2. Il ne bat pas le prix.
+C'est le seul enseignement exploitable : un bon AUC ne vaut rien tant qu'il ne
+dépasse pas la marge du bookmaker.
+
+Reproduire : `python scripts/mesurer_backtest.py --version dc-final`.
+
+## Prochaine action
+**Trancher entre deux voies.** D-06 interdit de publier des coupons sans
+rendement positif, et plus aucun marché n'en montre.
+
+1. **Chercher l'avantage ailleurs que dans le score.** Le moteur reproduit ce
+   que le marché sait déjà. Les 28 004 lignes de xG ne servent aujourd'hui
+   qu'aux features de forme ; un modèle qui prédit **depuis les xG** plutôt que
+   depuis les buts est la seule idée non essayée.
+2. **Acter que le projet ne bat pas le marché** sur ces données, et le
+   réorienter vers ce qu'il fait bien : classer, expliquer, mesurer — sans
+   promesse de rendement.
+
+C'est une décision de cadrage, pas de code : elle revient à l'utilisateur.
 
 ### L'ancienne action, faite
 **Compléter le corpus, pour pouvoir mesurer.** C'est désormais le seul verrou :

@@ -36,6 +36,112 @@ Description précise.
 
 ---
 
+## 2026-09-09 — L'Over/Under aussi est démontré perdant
+
+### Agent
+Claude Code (Opus 5)
+
+### Demande
+Poursuivre : committer, puis lancer la génération réelle et le backtest D-02
+sur les cinq championnats.
+
+### Actions effectuées
+- Sauvegarde vérifiée avant toute écriture : SHA-256 identique à la source,
+  `integrity_check` à `ok` — `data/backups/pronostic_avant_prediction_5champ_20260908_220423.db`
+- **Règlement** : 17 251 matchs, 534 766 lignes, zéro échec. Il manquait
+  2023/24 et 2025/26 pour les quatre championnats hors Angleterre.
+- **Passe 1** : 154 116 prédictions brutes sur validation + test.
+- **Calibration** : cinq calibrateurs ajustés sur 2023/24, un par championnat.
+- **Passe 2** : 101 874 prédictions calibrées sur les 3 504 matchs de test,
+  valorisées contre les cotes de clôture.
+- Fichiers créés : `evaluation/incertitude.py`, `scripts/mesurer_backtest.py`,
+  `tests/test_incertitude.py`, `tests/test_mesurer_backtest.py`
+- Fichier modifié : `evaluation/backtest.py` (bornes de cote en constantes)
+- Base modifiée : **oui**, après sauvegarde vérifiée.
+
+### Le résultat, et il est négatif
+Bootstrap à 95 % par pari, sur le jeu de test des cinq championnats :
+
+| Marché / stratégie | Paris | ROI | IC 95 % | Verdict |
+|---|---|---|---|---|
+| 1N2 | 9 372 | −5,44 % | [−8,73 ; −2,20] | **perdant, démontré** |
+| **Over/Under** | 6 248 | **−3,46 %** | **[−6,05 ; −1,00]** | **perdant, démontré** |
+| `edge ≥ 2 %` | 6 170 | −6,76 % | [−10,51 ; −3,06] | perdant, démontré |
+| `edge ≥ 5 %` | 4 194 | −7,23 % | [−11,46 ; −2,68] | perdant, démontré |
+| Favori du marché | 3 124 | +0,33 % | [−3,19 ; +3,65] | nul |
+
+**L'Over/Under était la dernière piste crédible du projet. Elle est morte.**
+Il avait été mesuré à +3,97 % sur 262 paris, avec un intervalle
+[−11,36 ; +19,74] qui ne permettait rien de conclure. Sur 6 248 paris —
+vingt-quatre fois plus — le signe s'établit, et il est négatif.
+
+C'est exactement ce que l'intervalle de la veille annonçait comme possible. Le
+volume n'a pas confirmé une intuition : il l'a réfutée.
+
+### La perte est uniforme, pas portée par un championnat
+Aucun des dix couples (championnat × marché) n'atteint seul la significativité
+— les effectifs sont trop faibles. Mais **les dix pointent dans le même sens**,
+de −1,83 % à −6,70 %. Ce n'est pas un championnat qui plombe la moyenne.
+
+| Championnat | 1N2 | Over/Under |
+|---|---|---|
+| Premier League | −2,87 % | −1,83 % |
+| Bundesliga | −4,35 % | −5,61 % |
+| Ligue 1 | −5,31 % | −3,97 % |
+| Serie A | −6,43 % | −2,28 % |
+| La Liga | −6,70 % | −3,32 % |
+
+### Ce que le moteur sait faire, et ce qu'il n'en tire pas
+Les AUC restent honorables : 0,759 sur l'Over/Under, 0,770 sur l'Over/Under de
+première mi-temps, 0,669 sur le 1N2. Le modèle **classe** correctement. Il ne
+bat simplement pas le prix : suivre le favori du marché donne +0,33 %, nul
+statistiquement, quand toute stratégie issue du moteur perd significativement.
+
+Séparer l'ordre du prix est le seul enseignement exploitable : un AUC de 0,77
+ne vaut rien tant qu'il ne dépasse pas la marge du bookmaker.
+
+### Deux défauts corrigés en séance
+- **Affichage** : les clés du rapport étaient lues de travers (`roi` au lieu de
+  `roi_pct`, `n_paris` au lieu de `paris`), ce qui affichait « 0 pari » sur un
+  backtest parfaitement valorisé. Trois tests figent désormais ces clés.
+- **Filtres divergents** : les intervalles sélectionnaient les paris autrement
+  que le backtest — le favori du marché était cherché sur tous les marchés au
+  lieu du seul 1N2. Les bornes de cote sont remontées en constantes partagées
+  (`COTE_MINIMALE`, `COTE_MAXIMALE`) et trois tests comparent les effectifs des
+  deux côtés, pour qu'une divergence casse un test au lieu de publier un
+  intervalle qui n'encadre pas son chiffre.
+
+### Une réserve sur la calibration
+Sur la Serie A et la Liga, le calibrateur **augmente** l'erreur mesurée sur les
+données mêmes qui l'ont ajusté (0,0248 → 0,0293 et 0,0229 → 0,0254). Platt
+optimise la log-vraisemblance, pas l'erreur de calibration : ces deux modèles
+étaient déjà bien calibrés et la correction leur nuit. À reprendre avant toute
+conclusion sur l'effet propre de la calibration.
+
+### Résultats
+- Tests : 598 → **623**, zéro ignoré.
+- Style : zéro violation `ruff`.
+
+### Commit
+- `b8380bd feat: backtest multi-championnats, avec intervalles de confiance`
+
+### Décision
+- À valider.
+
+### Prochaine étape
+D-06 interdit de publier des coupons sans rendement positif, et aucun marché
+n'en montre. Deux voies, et il faut trancher :
+
+1. **Chercher l'avantage ailleurs que dans le score.** Le moteur reproduit ce
+   que le marché sait déjà. Les xG sont en base (28 004 lignes) mais ne servent
+   qu'aux features de forme ; un modèle qui prédit depuis les xG plutôt que
+   depuis les buts est la seule idée non essayée.
+2. **Acter que le projet ne peut pas battre le marché** sur ces données, et le
+   réorienter vers ce qu'il fait bien : classer, expliquer, mesurer — sans
+   promesse de rendement.
+
+---
+
 ## 2026-09-08 (après-midi) — Chaque championnat prédit par son propre modèle
 
 ### Agent
