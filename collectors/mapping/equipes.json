@@ -10,10 +10,53 @@
     "elles confondaient des clubs distincts : Almeria/Valencia, Rayo Vallecano/",
     "Real Valladolid, Carpi/Cagliari, Cremonese/Crotone, Angers/Nantes,",
     "Caen/Amiens, Nimes/Nice — et surtout GFC Ajaccio (Gazélec) proposé à 1,0",
-    "vers Ajaccio (AC Ajaccio), qui sont deux clubs différents."
+    "vers Ajaccio (AC Ajaccio), qui sont deux clubs différents.",
+    "",
+    "Les correspondances api_football ont été relues le 19/09/2026 depuis les noms",
+    "de la saison 2026/27 rendus par la sonde. Une proposition a été REJETÉE :",
+    "'Le Mans' -> 'Lens', sortie à 0,727 de similarité, qui confond deux clubs",
+    "sans rapport. Une correspondance que le générateur n'avait pas vue a été",
+    "AJOUTÉE à la main : 'Stade Brestois 29' -> 'Brest'.",
+    "",
+    "Quatre clubs de 2026/27 n'ont aucun historique en base et ne sont donc pas",
+    "des correspondances mais des équipes à créer : Coventry (E0), Racing",
+    "Santander (SP1), SV Elversberg (D1) et Le Mans (F1). Dixon-Coles les",
+    "estimera mal tant qu'ils n'auront que quelques matchs."
   ],
   "correspondances": {
-    "api_football": {},
+    "api_football": {
+      "D1": {
+        "1. FC Köln": "Koln",
+        "1899 Hoffenheim": "Hoffenheim",
+        "Bayern München": "Bayern Munich",
+        "FC Augsburg": "Augsburg",
+        "FC Schalke 04": "Schalke 04",
+        "FSV Mainz 05": "Mainz",
+        "Hamburger SV": "Hamburg",
+        "SC Freiburg": "Freiburg",
+        "SC Paderborn 07": "Paderborn",
+        "VfB Stuttgart": "Stuttgart"
+      },
+      "E0": {
+        "Bournemouth": "AFC Bournemouth",
+        "Brighton": "Brighton & Hove Albion",
+        "Ipswich": "Ipswich Town",
+        "Leeds": "Leeds United",
+        "Manchester United": "Manchester Utd",
+        "Newcastle": "Newcastle Utd"
+      },
+      "F1": {
+        "Estac Troyes": "Troyes",
+        "Stade Brestois 29": "Brest"
+      },
+      "I1": {
+        "AS Roma": "Roma",
+        "Inter": "Inter Milan"
+      },
+      "SP1": {
+        "Athletic Club": "Athletic Bilbao"
+      }
+    },
     "understat": {
       "D1": {
         "Borussia M.Gladbach": "Borussia Monchengladbach",
