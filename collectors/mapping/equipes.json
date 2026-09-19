@@ -21,7 +21,13 @@
     "Quatre clubs de 2026/27 n'ont aucun historique en base et ne sont donc pas",
     "des correspondances mais des équipes à créer : Coventry (E0), Racing",
     "Santander (SP1), SV Elversberg (D1) et Le Mans (F1). Dixon-Coles les",
-    "estimera mal tant qu'ils n'auront que quelques matchs."
+    "estimera mal tant qu'ils n'auront que quelques matchs.",
+    "",
+    "Deux correspondances ont été ajoutées le 19/09/2026 APRÈS un premier import,",
+    "qui avait créé des doublons : « Borussia Mönchengladbach » (tréma) et",
+    "« Paris Saint Germain » (sans trait d'union). Le générateur les avait rangés",
+    "parmi les noms « déjà résolus » et ne les avait donc pas soumis à relecture.",
+    "Les doublons sont fusionnés par migrations/20260919_fusionner_doublons_api_football.sql."
   ],
   "correspondances": {
     "api_football": {
@@ -35,7 +41,8 @@
         "Hamburger SV": "Hamburg",
         "SC Freiburg": "Freiburg",
         "SC Paderborn 07": "Paderborn",
-        "VfB Stuttgart": "Stuttgart"
+        "VfB Stuttgart": "Stuttgart",
+        "Borussia Mönchengladbach": "Borussia Monchengladbach"
       },
       "E0": {
         "Bournemouth": "AFC Bournemouth",
@@ -47,7 +54,8 @@
       },
       "F1": {
         "Estac Troyes": "Troyes",
-        "Stade Brestois 29": "Brest"
+        "Stade Brestois 29": "Brest",
+        "Paris Saint Germain": "Paris Saint-Germain"
       },
       "I1": {
         "AS Roma": "Roma",
