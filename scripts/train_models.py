@@ -10,8 +10,15 @@ entraînement jusqu'à la fin de 2022/23, validation sur 2023/24, test sur
 2024/25 et 2025/26. Les déplacer expose le jeu de test ; ne le faire que
 délibérément, et le signaler dans le rapport.
 
+Deux cibles d'ajustement sont disponibles. `buts` estime les forces depuis
+les scores, `xg` depuis les buts attendus — la qualité des occasions, débarrassée
+du bruit de conversion (voir `models/dixon_coles_xg.py`). Les modèles de mi-temps
+restent ajustés sur les buts dans les deux cas : la base ne porte pas de xG par
+période.
+
 Usage :
     python scripts/train_models.py
+    python scripts/train_models.py --cible xg --version dc-xg
     python scripts/train_models.py --train-end 2023-06-30 --val-end 2024-06-30
     python scripts/train_models.py --version dixon-coles-2026-09
     python scripts/train_models.py --dry-run
@@ -30,17 +37,27 @@ from loguru import logger
 
 from app.database import SessionLocal
 from models.dixon_coles import fit_dixon_coles
+from models.dixon_coles_xg import fit_dixon_coles_xg
 from models.first_half import fit_half_models
 from models.model_registry import ModelRegistry
 
 REQUETE = """
-    SELECT id, competition_id, season_id, match_date,
-           home_team_id, away_team_id, home_goals, away_goals,
-           home_ht_goals, away_ht_goals
-      FROM matches
-     WHERE home_goals IS NOT NULL AND away_goals IS NOT NULL
-     ORDER BY match_date, id
+    SELECT m.id, m.competition_id, m.season_id, m.match_date,
+           m.home_team_id, m.away_team_id, m.home_goals, m.away_goals,
+           m.home_ht_goals, m.away_ht_goals,
+           dom.xg AS home_xg, ext.xg AS away_xg
+      FROM matches m
+      LEFT JOIN xg_match_stats dom
+             ON dom.match_id = m.id AND dom.team_id = m.home_team_id
+      LEFT JOIN xg_match_stats ext
+             ON ext.match_id = m.id AND ext.team_id = m.away_team_id
+     WHERE m.home_goals IS NOT NULL AND m.away_goals IS NOT NULL
+     ORDER BY m.match_date, m.id
 """
+
+# Ajusteurs disponibles, par cible. Tous deux rendent un ``DixonColesModel``,
+# interchangeable en aval.
+AJUSTEURS = {"buts": fit_dixon_coles, "xg": fit_dixon_coles_xg}
 
 
 def charger_matchs() -> pd.DataFrame:
@@ -81,8 +98,18 @@ def entrainer(
     version: str,
     xi: float,
     dry_run: bool,
+    cible: str = "buts",
 ) -> dict:
-    """Entraîner un modèle par compétition et l'enregistrer."""
+    """Entraîner un modèle par compétition et l'enregistrer.
+
+    ``cible`` choisit ce depuis quoi les forces sont estimées : ``buts`` ou
+    ``xg``. Le reste du protocole — découpage, mi-temps, registre — est
+    identique, de sorte que les deux soient comparables terme à terme.
+    """
+    if cible not in AJUSTEURS:
+        raise ValueError(f"Cible inconnue : {cible!r} (attendu : {sorted(AJUSTEURS)})")
+    ajuster = AJUSTEURS[cible]
+
     matchs = charger_matchs()
     if matchs.empty:
         logger.error("Aucun match joué en base : rien à entraîner.")
@@ -95,6 +122,14 @@ def entrainer(
         f"(jusqu'au {train_end}), {len(validation)} de validation "
         f"(jusqu'au {val_end}), {len(matchs) - len(train) - len(validation)} réservés au test"
     )
+    if cible == "xg":
+        couverts = train[["home_xg", "away_xg"]].notna().all(axis=1).sum()
+        logger.info(
+            f"Cible xG : {couverts} matchs d'entraînement sur {len(train)} en portent "
+            f"({100 * couverts / max(len(train), 1):.0f} %). Les autres sont écartés de "
+            f"l'ajustement des forces."
+        )
+
     if train.empty:
         logger.error(
             f"Aucun match avant le {train_end}. La base ne couvre que "
@@ -107,7 +142,7 @@ def entrainer(
 
     for competition_id, groupe in train.groupby("competition_id"):
         try:
-            modele = fit_dixon_coles(
+            modele = ajuster(
                 groupe,
                 xi=xi,
                 reference_date=groupe["match_date"].max(),
@@ -119,6 +154,7 @@ def entrainer(
 
         val_competition = validation[validation["competition_id"] == competition_id]
         metriques = {
+            "cible": cible,
             "n_train": modele.n_matches,
             "n_validation": int(len(val_competition)),
             "log_vraisemblance_train": modele.log_likelihood,
@@ -201,14 +237,22 @@ def main() -> None:
         help="Décroissance temporelle par jour ; 0 désactive la pondération",
     )
     parser.add_argument(
+        "--cible",
+        choices=sorted(AJUSTEURS),
+        default="buts",
+        help="Depuis quoi estimer les forces : les buts marqués (défaut) ou les buts attendus",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Entraîner et évaluer sans rien enregistrer",
     )
     args = parser.parse_args()
 
-    logger.info("=== Entraînement des modèles ===")
-    resultats = entrainer(args.train_end, args.val_end, args.version, args.xi, args.dry_run)
+    logger.info(f"=== Entraînement des modèles (cible : {args.cible}) ===")
+    resultats = entrainer(
+        args.train_end, args.val_end, args.version, args.xi, args.dry_run, cible=args.cible
+    )
 
     if not resultats:
         logger.warning("Aucun modèle entraîné.")

@@ -218,7 +218,7 @@ def _log_vraisemblance(
     return -total
 
 
-def _poids_temporels(dates: pd.Series, reference: pd.Timestamp, xi: float) -> np.ndarray:
+def poids_temporels(dates: pd.Series, reference: pd.Timestamp, xi: float) -> np.ndarray:
     """Poids décroissant exponentiellement avec l'ancienneté du match."""
     if xi <= 0:
         return np.ones(len(dates))
@@ -276,7 +276,7 @@ def fit_dixon_coles(
 
     if xi > 0 and "match_date" in notes.columns:
         reference = reference_date or pd.to_datetime(notes["match_date"]).max()
-        poids = _poids_temporels(notes["match_date"], pd.Timestamp(reference), xi)
+        poids = poids_temporels(notes["match_date"], pd.Timestamp(reference), xi)
     else:
         poids = np.ones(len(notes))
 
