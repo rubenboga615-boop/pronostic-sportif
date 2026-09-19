@@ -119,6 +119,18 @@ class CoteNormalisee:
 
 
 @dataclass
+class BlessureNormalisee:
+    """Une indisponibilité, prête à être écrite dans `availability`."""
+
+    provider_match_id: str
+    equipe: str
+    joueur_id: int | None
+    joueur: str
+    statut: str
+    motif: str | None = None
+
+
+@dataclass
 class ResultatParsage:
     """Ce qu'un lot de fixtures a donné, succès et rejets ensemble."""
 
@@ -309,3 +321,54 @@ def parser_cotes(entree: dict) -> list[CoteNormalisee]:
                 for selection, cote in serie.items()
             )
     return releves
+
+
+# Statuts d'indisponibilité du fournisseur. « Missing Fixture » est une absence
+# avérée pour ce match ; « Questionable » un doute que le club n'a pas levé.
+# Les distinguer importe : une absence certaine et une incertitude ne pèsent
+# pas pareil sur les buts attendus d'une équipe.
+STATUTS_INDISPONIBILITE = {
+    "Missing Fixture": "absent",
+    "Questionable": "incertain",
+}
+
+
+def parser_blessures(
+    reponse: list[dict], table_equipes: dict[str, str]
+) -> list[BlessureNormalisee]:
+    """Traduire la réponse ``injuries`` en indisponibilités.
+
+    Vérifié le 19/09/2026 : les entrées sont rattachées à un match **à venir**
+    — 26 joueurs pour Tottenham - Aston Villa, relevées la nuit précédant un
+    coup d'envoi à 11h30. L'information est donc publiée avant le match, et
+    s'en servir pour prédire ne viole pas la règle anti-fuite.
+
+    Une réserve subsiste, et elle ne concerne que le passé : rien ne garantit
+    que la liste d'un match ancien n'ait pas été complétée après coup. Un
+    modèle entraîné sur l'historique des absences apprendrait alors sur une
+    information qui n'était pas disponible le jour du match. Les relevés faits
+    en avant, eux, sont datés par leur collecte et restent propres.
+    """
+    blessures: list[BlessureNormalisee] = []
+    for entree in reponse:
+        joueur = entree.get("player") or {}
+        equipe = entree.get("team") or {}
+        match = entree.get("fixture") or {}
+        if not match.get("id") or not equipe.get("name"):
+            continue
+
+        statut = STATUTS_INDISPONIBILITE.get(str(joueur.get("type")))
+        if statut is None:
+            continue
+
+        blessures.append(
+            BlessureNormalisee(
+                provider_match_id=f"af_{match['id']}",
+                equipe=traduire_equipe(equipe["name"], table_equipes),
+                joueur_id=joueur.get("id"),
+                joueur=str(joueur.get("name") or "inconnu"),
+                statut=statut,
+                motif=joueur.get("reason"),
+            )
+        )
+    return blessures

@@ -11,6 +11,7 @@ import pytest
 from collectors.api_football.parsers import (
     CoteNormalisee,
     date_sans_fuseau,
+    parser_blessures,
     parser_cotes,
     parser_fixture,
     parser_fixtures,
@@ -347,3 +348,58 @@ class TestLesHuitMarchesDeLaPhase1:
         pari["values"] = [{"value": "Home/Draw", "odd": "1.30"}]
 
         assert all(r.marche != "double_chance" for r in parser_cotes(entree))
+
+
+def entree_blessure(statut="Missing Fixture", equipe="Tottenham", joueur="D. Kulusevski"):
+    return {
+        "player": {"id": 30435, "name": joueur, "type": statut, "reason": "Knee Injury"},
+        "team": {"id": 47, "name": equipe},
+        "fixture": {"id": 1557416, "date": "2026-09-19T11:30:00+00:00"},
+        "league": {"id": 39, "season": 2026},
+    }
+
+
+class TestParserBlessures:
+    """Vérifié le 19/09/2026 : ces entrées sont rattachées à un match à venir
+    et publiées avant le coup d'envoi — 26 joueurs pour Tottenham - Aston Villa
+    relevés la nuit précédant un match de 11h30. S'en servir pour prédire ne
+    viole donc pas la règle anti-fuite."""
+
+    def test_une_absence_est_lue(self):
+        blessure = parser_blessures([entree_blessure()], {})[0]
+
+        assert blessure.provider_match_id == "af_1557416"
+        assert blessure.equipe == "Tottenham"
+        assert blessure.joueur == "D. Kulusevski"
+        assert blessure.statut == "absent"
+        assert blessure.motif == "Knee Injury"
+
+    def test_un_doute_n_est_pas_une_absence(self):
+        """Une absence certaine et une incertitude ne pèsent pas pareil sur
+        les buts attendus d'une équipe."""
+        blessure = parser_blessures([entree_blessure(statut="Questionable")], {})[0]
+
+        assert blessure.statut == "incertain"
+
+    def test_un_statut_inconnu_est_ecarte(self):
+        assert parser_blessures([entree_blessure(statut="Sur le banc")], {}) == []
+
+    def test_le_nom_d_equipe_est_traduit(self):
+        blessure = parser_blessures(
+            [entree_blessure(equipe="Stade Brestois 29")], {"Stade Brestois 29": "Brest"}
+        )[0]
+
+        assert blessure.equipe == "Brest"
+
+    def test_une_entree_sans_match_est_ecartee(self):
+        entree = entree_blessure()
+        entree["fixture"] = {}
+
+        assert parser_blessures([entree], {}) == []
+
+    def test_l_identifiant_de_match_rejoint_celui_des_fixtures(self):
+        """Sinon l'indisponibilité est orpheline et n'atteint jamais sa rencontre."""
+        blessure = parser_blessures([entree_blessure()], {})[0]
+        match = parser_fixture(fixture_brute(identifiant=1557416), {}, "E0")
+
+        assert blessure.provider_match_id == match.provider_match_id

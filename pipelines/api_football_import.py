@@ -48,13 +48,15 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import Match, OddsSnapshot, Season, Team
+from app.models import Availability, Match, OddsSnapshot, Season, Team
 from collectors.api_football.client import ClientApiFootball
 from collectors.api_football.erreurs import ApiFootballError
 from collectors.api_football.ligues import LIGUES
 from collectors.api_football.parsers import (
+    BlessureNormalisee,
     CoteNormalisee,
     MatchNormalise,
+    parser_blessures,
     parser_cotes,
     parser_fixtures,
     saison_football_data,
@@ -80,6 +82,8 @@ class Rapport:
     equipes_creees: list[str] = field(default_factory=list)
     cotes_inserees: int = 0
     cotes_deja_presentes: int = 0
+    blessures_inserees: int = 0
+    blessures_deja_presentes: int = 0
     ignores: list[dict] = field(default_factory=list)
     appels: int = 0
 
@@ -92,6 +96,8 @@ class Rapport:
             "equipes_creees": self.equipes_creees,
             "cotes_inserees": self.cotes_inserees,
             "cotes_deja_presentes": self.cotes_deja_presentes,
+            "blessures_inserees": self.blessures_inserees,
+            "blessures_deja_presentes": self.blessures_deja_presentes,
             "appels": self.appels,
             "ignores": self.ignores,
         }
@@ -406,11 +412,18 @@ async def importer_cotes(
     dates: list[str],
     rapport: Rapport | None = None,
     dry_run: bool = False,
+    cloture: bool = False,
 ) -> Rapport:
     """Importer les cotes des matchs d'une liste de dates.
 
     Interroger par date plutôt que par match coûte une poignée d'appels au lieu
     d'un par rencontre — le quota est large, mais le réseau ne l'est pas.
+
+    ``cloture`` marque les relevés comme cotes de clôture. Il n'est légitime
+    que dans l'heure précédant les coups d'envoi : tout le rendement du projet
+    est mesuré contre la clôture, et étiqueter ainsi un relevé de la veille
+    rendrait les mesures futures incomparables aux 3 504 matchs déjà mesurés —
+    sans qu'aucune erreur ne le signale.
     """
     rapport = rapport or Rapport()
     ligues_du_perimetre = {identifiant for identifiant, _, _ in LIGUES.values()}
@@ -429,11 +442,126 @@ async def importer_cotes(
             ]
             for entree in entrees:
                 releves = parser_cotes(entree)
+                if cloture:
+                    for releve in releves:
+                        releve.cloture = True
                 if not dry_run:
                     _ecrire_cotes(session, releves, rapport)
             logger.info(f"{date} page {page}/{pages} : {len(entrees)} matchs du périmètre")
             page += 1
         if not dry_run:
+            session.commit()
+
+    return rapport
+
+
+# ──────────────────────────────────────────────
+# Écriture des indisponibilités
+# ──────────────────────────────────────────────
+
+
+def _ecrire_blessures(session, blessures: list[BlessureNormalisee], rapport: Rapport) -> None:
+    """Insérer des indisponibilités, sans recréer celles déjà connues.
+
+    Une entrée est identifiée par son match, son équipe et son joueur. Relevée
+    deux fois le même jour elle n'ajoute rien ; son statut peut en revanche
+    changer d'un jour à l'autre — un joueur incertain devient absent, ou
+    l'inverse — et cette mise à jour-là est conservée.
+    """
+    for blessure in blessures:
+        match = session.execute(
+            select(Match).where(
+                Match.provider == FOURNISSEUR,
+                Match.provider_match_id == blessure.provider_match_id,
+            )
+        ).scalar_one_or_none()
+        if match is None:
+            rapport.ignores.append(
+                {"motif": "blessure sans match en base", "fixture": blessure.provider_match_id}
+            )
+            continue
+
+        equipe = session.execute(
+            select(Team).where(Team.canonical_name == blessure.equipe)
+        ).scalar_one_or_none()
+        if equipe is None:
+            rapport.ignores.append(
+                {"motif": "blessure d'une équipe inconnue", "equipe": blessure.equipe}
+            )
+            continue
+
+        deja = (
+            session.execute(
+                select(Availability).where(
+                    Availability.match_id == match.id,
+                    Availability.team_id == equipe.id,
+                    Availability.player_name == blessure.joueur,
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if deja is not None:
+            if deja.status != blessure.statut:
+                deja.status = blessure.statut
+                deja.reason = blessure.motif
+                deja.retrieved_at = datetime.now(UTC)
+            rapport.blessures_deja_presentes += 1
+            continue
+
+        session.add(
+            Availability(
+                match_id=match.id,
+                team_id=equipe.id,
+                player_id=str(blessure.joueur_id) if blessure.joueur_id else None,
+                player_name=blessure.joueur,
+                status=blessure.statut,
+                reason=blessure.motif,
+                # Le fournisseur ne dit pas si le club a confirmé l'absence ;
+                # la déclarer confirmée serait lui prêter une certitude qu'il
+                # n'exprime pas.
+                confirmed=False,
+                source=FOURNISSEUR,
+                retrieved_at=datetime.now(UTC),
+            )
+        )
+        rapport.blessures_inserees += 1
+
+    session.flush()
+
+
+async def importer_blessures(
+    session,
+    client,
+    saison_api: int,
+    codes: list[str] | None = None,
+    rapport: Rapport | None = None,
+    dry_run: bool = False,
+) -> Rapport:
+    """Importer les indisponibilités déclarées, une requête par championnat.
+
+    Vérifié le 19/09/2026 : ces entrées sont rattachées à des matchs **à
+    venir** et publiées avant le coup d'envoi. Les utiliser pour prédire ne
+    viole donc pas la règle anti-fuite — c'est même la seule information de ce
+    corpus que le marché peut intégrer avec retard.
+    """
+    rapport = rapport or Rapport()
+    registre = charger_registre()
+    codes = codes or list(LIGUES)
+
+    for code in codes:
+        identifiant, nom, _ = LIGUES[code]
+        reponse = await appeler(
+            client, "injuries", {"league": identifiant, "season": saison_api}, rapport
+        )
+        if reponse is None:
+            continue
+
+        table = registre.correspondances.get(FOURNISSEUR, {}).get(code, {})
+        blessures = parser_blessures(reponse.get("response") or [], table)
+        logger.info(f"{code} {nom} : {len(blessures)} indisponibilités lues")
+        if not dry_run:
+            _ecrire_blessures(session, blessures, rapport)
             session.commit()
 
     return rapport
@@ -462,6 +590,10 @@ async def _executer(args) -> Rapport:
             await importer_matchs(
                 session, client, args.saison, args.competitions, rapport, args.dry_run
             )
+        if args.blessures:
+            await importer_blessures(
+                session, client, args.saison, args.competitions, rapport, args.dry_run
+            )
         if args.cotes:
             aujourdhui = datetime.now(UTC).date()
             dates = [(aujourdhui + timedelta(days=n)).isoformat() for n in range(args.jours)]
@@ -478,6 +610,9 @@ def main() -> None:
         "--cotes", action="store_true", help="Importer les cotes des matchs à venir"
     )
     parser.add_argument(
+        "--blessures", action="store_true", help="Importer les indisponibilités déclarées"
+    )
+    parser.add_argument(
         "--saison", type=int, default=None, help="Saison API (défaut : la courante)"
     )
     parser.add_argument(
@@ -489,8 +624,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Lire sans rien écrire")
     args = parser.parse_args()
 
-    if not (args.matchs or args.cotes):
-        parser.error("Rien à faire : précisez --matchs et/ou --cotes.")
+    if not (args.matchs or args.cotes or args.blessures):
+        parser.error("Rien à faire : précisez --matchs, --cotes et/ou --blessures.")
     if args.saison is None:
         maintenant = datetime.now(UTC)
         args.saison = maintenant.year if maintenant.month >= 7 else maintenant.year - 1
