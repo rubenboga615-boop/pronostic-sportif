@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 from models.dixon_coles import (
+    BORNE_FORCE,
     RHO_MAX,
     DixonColesModel,
     fit_dixon_coles,
@@ -327,3 +328,106 @@ class TestEntreesInvalides:
         )
         with pytest.raises(ValueError, match="deux équipes"):
             fit_dixon_coles(df)
+
+
+class TestRegularisationDesForces:
+    """Sans prior, une équipe qui n'a pas marqué fait diverger l'optimiseur.
+
+    Constaté le 19/09/2026 sur Coventry, promu resté muet en quatre matchs :
+    force d'attaque à -8,07 quand les autres tenaient dans [-0,45 ; +0,79], et
+    un « BTTS non » annoncé à 100 %. Le défaut était invisible tant que
+    l'entraînement portait sur des saisons complètes.
+    """
+
+    @staticmethod
+    def _championnat_avec_une_equipe_muette(n_journees: int = 4) -> pd.DataFrame:
+        """Quatre équipes ordinaires, une cinquième qui ne marque jamais."""
+        lignes = []
+        jour = pd.Timestamp("2026-08-01")
+        for journee in range(n_journees):
+            for dom, ext, bd, be in (
+                (1, 2, 2, 1),
+                (3, 4, 1, 1),
+                (2, 3, 0, 2),
+                (4, 1, 1, 3),
+                (1, 5, 3, 0),  # 5 ne marque pas
+                (5, 2, 0, 1),  # ni ici
+                (5, 3, 0, 2),
+                (4, 5, 2, 0),
+            ):
+                lignes.append(
+                    {
+                        "home_team_id": dom,
+                        "away_team_id": ext,
+                        "home_goals": bd,
+                        "away_goals": be,
+                        "match_date": jour + pd.Timedelta(days=7 * journee),
+                    }
+                )
+        return pd.DataFrame(lignes)
+
+    def test_l_equipe_muette_ne_part_pas_vers_l_infini(self):
+        jeu = self._championnat_avec_une_equipe_muette()
+
+        modele = fit_dixon_coles(jeu, xi=0.0)
+
+        assert modele.attack[5] > -3.0, "la force d'attaque a divergé"
+
+    def test_sans_regularisation_elle_diverge(self):
+        """Le contre-essai : c'est bien le prior qui tient, pas autre chose."""
+        jeu = self._championnat_avec_une_equipe_muette()
+
+        sans = fit_dixon_coles(jeu, xi=0.0, sigma_forces=0.0)
+        avec = fit_dixon_coles(jeu, xi=0.0)
+
+        assert avec.attack[5] > sans.attack[5]
+
+    def test_aucune_probabilite_ne_vaut_zero_ni_un(self):
+        """Une probabilité de 100 % n'existe pas : c'était l'artefact visible."""
+        jeu = self._championnat_avec_une_equipe_muette()
+        modele = fit_dixon_coles(jeu, xi=0.0)
+
+        lam, mu = modele.lambdas(1, 5)
+
+        assert mu > 0.05, f"but attendu irréaliste pour l'équipe muette : {mu}"
+        matrice = modele.score_matrix(1, 5)
+        assert matrice[0][0] < 0.99
+
+    def test_une_equipe_bien_documentee_n_est_pas_tiree_vers_la_moyenne(self):
+        """Le prior doit s'effacer devant l'information : c'est tout son sens."""
+        jeu = self._championnat_avec_une_equipe_muette(n_journees=40)
+
+        modele = fit_dixon_coles(jeu, xi=0.0)
+
+        # L'équipe 1 marque beaucoup sur 320 matchs : son attaque reste nette.
+        assert modele.attack[1] > 0.15
+
+    def test_le_nombre_de_matchs_par_equipe_est_conserve(self):
+        """Rien dans les forces ne dit si elles reposent sur 4 matchs ou 300."""
+        jeu = self._championnat_avec_une_equipe_muette()
+
+        modele = fit_dixon_coles(jeu, xi=0.0)
+
+        assert modele.matchs_par_equipe[5] == 16  # 4 rencontres par journée, 4 journées
+        # Le minimum des deux : c'est l'équipe la moins documentée qui fixe la
+        # confiance qu'on peut avoir dans la prédiction d'une rencontre.
+        assert modele.matchs_par_equipe[1] == 12
+        assert modele.matchs_connus(1, 5) == 12
+
+    def test_le_comptage_survit_a_la_serialisation(self):
+        jeu = self._championnat_avec_une_equipe_muette()
+        modele = fit_dixon_coles(jeu, xi=0.0)
+
+        rejoue = DixonColesModel.from_dict(modele.to_dict())
+
+        assert rejoue.matchs_par_equipe == modele.matchs_par_equipe
+
+    def test_la_derniere_equipe_reste_dans_les_bornes(self):
+        """La contrainte somme(attaques)=0 la laisse hors des bornes de
+        l'optimiseur : c'est par là que Coventry est descendu à -8,07."""
+        jeu = self._championnat_avec_une_equipe_muette()
+
+        modele = fit_dixon_coles(jeu, xi=0.0)
+
+        derniere = max(modele.attack)
+        assert abs(modele.attack[derniere]) <= BORNE_FORCE

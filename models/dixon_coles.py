@@ -55,6 +55,33 @@ RHO_MIN, RHO_MAX = -0.4, 0.4
 # Pénalité renvoyée à l'optimiseur lorsqu'un jeu de paramètres est invalide.
 PENALITE = 1e10
 
+# Écart-type du prior gaussien placé sur les forces d'attaque et de défense.
+#
+# Sans lui, une équipe qui n'a pas marqué voit sa force d'attaque partir vers
+# moins l'infini : c'est la séparation complète du maximum de vraisemblance.
+# Mesuré le 19/09/2026 sur Coventry, promu n'ayant pas marqué en quatre matchs
+# — force estimée à -8,07 quand toutes les autres tiennent dans [-0,45 ; +0,79],
+# soit 0,0003 but attendu et un « BTTS non » annoncé à 100 %. Une probabilité
+# de 100 % n'existe pas ; celle-ci était un artefact d'optimisation.
+#
+# Le défaut restait invisible tant que l'entraînement portait sur huit saisons
+# complètes, où chaque équipe finit par marquer. Il apparaît dès qu'on entraîne
+# jusqu'au jour même, avec des promus à quatre matchs.
+#
+# 0,5 est choisi sur la dispersion réellement observée des forces, qui tiennent
+# dans [-0,5 ; +0,9] sur les cinq championnats. Le prior est donc large pour une
+# équipe documentée — la vraisemblance de trois cents matchs l'écrase sans
+# peine — et contraignant pour une équipe qui en compte quatre. C'est
+# exactement le comportement voulu : le retrait vers la moyenne est
+# proportionnel à ce qu'on ignore.
+SIGMA_FORCES = 0.5
+
+# Bornes des forces individuelles. Elles ne suffisent pas à elles seules : la
+# contrainte d'identifiabilité `somme(attaques) = 0` fait de la dernière équipe
+# l'opposé de la somme des autres, et celle-là échappe aux bornes de
+# l'optimiseur. C'est par là que Coventry est descendu à -8,07.
+BORNE_FORCE = 3.0
+
 
 @dataclass
 class DixonColesModel:
@@ -69,6 +96,10 @@ class DixonColesModel:
     converged: bool = True
     log_likelihood: float = 0.0
     competition_id: Any = None
+    # Nombre de matchs d'entraînement par équipe. C'est ce qui dit si une force
+    # est croyable : quatre matchs ne valent pas trois cents, et rien dans les
+    # paramètres eux-mêmes ne permet de faire la différence.
+    matchs_par_equipe: dict[int, int] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -92,6 +123,18 @@ class DixonColesModel:
         mu = float(np.exp(a_ext - d_dom))
         return max(lam, 1e-6), max(mu, 1e-6)
 
+    def matchs_connus(self, *team_ids: int) -> int:
+        """Le plus petit nombre de matchs d'entraînement parmi ces équipes.
+
+        Sert à qualifier une prédiction plutôt qu'à la refuser : une rencontre
+        où l'une des deux équipes compte quatre matchs ne vaut pas celle où
+        toutes deux en comptent trois cents, et rien dans les probabilités
+        produites ne laisse voir la différence.
+        """
+        if not self.matchs_par_equipe:
+            return 0
+        return min(self.matchs_par_equipe.get(int(t), 0) for t in team_ids)
+
     def score_matrix(
         self,
         home_team_id: int,
@@ -114,6 +157,7 @@ class DixonColesModel:
             "converged": self.converged,
             "log_likelihood": self.log_likelihood,
             "competition_id": self.competition_id,
+            "matchs_par_equipe": {str(k): v for k, v in self.matchs_par_equipe.items()},
             "metadata": self.metadata,
         }
 
@@ -129,6 +173,9 @@ class DixonColesModel:
             converged=bool(donnees.get("converged", True)),
             log_likelihood=float(donnees.get("log_likelihood", 0.0)),
             competition_id=donnees.get("competition_id"),
+            matchs_par_equipe={
+                int(k): int(v) for k, v in (donnees.get("matchs_par_equipe") or {}).items()
+            },
             metadata=donnees.get("metadata", {}),
         )
 
@@ -187,13 +234,19 @@ def _log_vraisemblance(
     away_goals: np.ndarray,
     poids: np.ndarray,
     n_teams: int,
+    sigma_forces: float = SIGMA_FORCES,
 ) -> float:
-    """Log-vraisemblance négative pondérée, vectorisée.
+    """Log-vraisemblance négative pénalisée et pondérée, vectorisée.
 
     Le paramétrage impose ``somme(attaque) = 0`` : sans cette contrainte, une
     constante ajoutée à toutes les attaques et retranchée à toutes les défenses
     laisse la vraisemblance inchangée, et les forces individuelles n'ont plus
     de valeur interprétable.
+
+    S'y ajoute un prior gaussien centré sur zéro (voir :data:`SIGMA_FORCES`).
+    Sa pénalité vaut ``somme(force²) / (2σ²)`` : négligeable devant la
+    vraisemblance d'une équipe bien documentée, décisive pour une équipe qui
+    n'a que quelques matchs et dont le maximum de vraisemblance divergerait.
     """
     rho = params[0]
     home_adv = params[1]
@@ -215,6 +268,12 @@ def _log_vraisemblance(
     total = float(np.sum(poids * ll))
     if not np.isfinite(total):
         return PENALITE
+
+    if sigma_forces > 0:
+        penalite = (float(np.sum(attack**2)) + float(np.sum(defense**2))) / (
+            2.0 * sigma_forces**2
+        )
+        return -total + penalite
     return -total
 
 
@@ -234,6 +293,7 @@ def fit_dixon_coles(
     reference_date: pd.Timestamp | None = None,
     competition_id: Any = None,
     max_iterations: int = 500,
+    sigma_forces: float = SIGMA_FORCES,
 ) -> DixonColesModel:
     """Ajuster un modèle Dixon-Coles par maximum de vraisemblance.
 
@@ -247,6 +307,10 @@ def fit_dixon_coles(
             pour que l'ajustement reste reproductible.
         competition_id: renseigné dans le modèle, à titre documentaire.
         max_iterations: plafond d'itérations de l'optimiseur.
+        sigma_forces: écart-type du prior gaussien sur les forces. ``0``
+            désactive la régularisation et restaure le maximum de
+            vraisemblance pur — qui diverge sur une équipe n'ayant pas marqué,
+            voir :data:`SIGMA_FORCES`.
 
     Returns:
         Le modèle ajusté.
@@ -295,20 +359,30 @@ def fit_dixon_coles(
     )
 
     bornes = (
-        [(RHO_MIN, RHO_MAX), (-1.0, 1.0)] + [(-3.0, 3.0)] * (n_teams - 1) + [(-3.0, 3.0)] * n_teams
+        [(RHO_MIN, RHO_MAX), (-1.0, 1.0)]
+        + [(-BORNE_FORCE, BORNE_FORCE)] * (n_teams - 1)
+        + [(-BORNE_FORCE, BORNE_FORCE)] * n_teams
     )
 
-    logger.info(f"Ajustement Dixon-Coles : {len(notes)} matchs, {n_teams} équipes, xi={xi}")
+    logger.info(
+        f"Ajustement Dixon-Coles : {len(notes)} matchs, {n_teams} équipes, "
+        f"xi={xi}, sigma={sigma_forces}"
+    )
     resultat = minimize(
         _log_vraisemblance,
         depart,
-        args=(home_idx, away_idx, home_goals, away_goals, poids, n_teams),
+        args=(home_idx, away_idx, home_goals, away_goals, poids, n_teams, sigma_forces),
         method="L-BFGS-B",
         bounds=bornes,
         options={"maxiter": max_iterations},
     )
 
     params = resultat.x
+    matchs_par_equipe = (
+        notes["home_team_id"].value_counts().add(
+            notes["away_team_id"].value_counts(), fill_value=0
+        )
+    ).astype(int)
     attack_libre = params[2 : 1 + n_teams]
     attack = np.append(attack_libre, -attack_libre.sum())
     defense = params[1 + n_teams : 1 + 2 * n_teams]
@@ -326,6 +400,9 @@ def fit_dixon_coles(
         converged=bool(resultat.success),
         log_likelihood=float(-resultat.fun),
         competition_id=competition_id,
+        matchs_par_equipe={
+            int(team_id): int(matchs_par_equipe.get(team_id, 0)) for team_id in index
+        },
     )
     logger.info(
         f"Ajusté : avantage terrain={modele.home_advantage:.3f}, "

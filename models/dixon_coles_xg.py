@@ -41,9 +41,11 @@ from loguru import logger
 from scipy.optimize import minimize, minimize_scalar
 
 from models.dixon_coles import (
+    BORNE_FORCE,
     PENALITE,
     RHO_MAX,
     RHO_MIN,
+    SIGMA_FORCES,
     XI_DEFAUT,
     DixonColesModel,
     poids_temporels,
@@ -62,13 +64,19 @@ def _log_vraisemblance_xg(
     away_xg: np.ndarray,
     poids: np.ndarray,
     n_teams: int,
+    sigma_forces: float = SIGMA_FORCES,
 ) -> float:
-    """Quasi-log-vraisemblance de Poisson négative, pondérée et vectorisée.
+    """Quasi-log-vraisemblance de Poisson négative, pénalisée et pondérée.
 
     Même paramétrage que l'ajustement sur les buts — ``somme(attaque) = 0``
     pour lever l'indétermination entre attaque et défense — mais sans ``rho`` :
     la correction sur les scores serrés ne s'applique pas à une observation
     continue.
+
+    Le prior gaussien sur les forces est le même que sur les buts, et pour la
+    même raison. Il est même plus nécessaire ici : une équipe peut ne pas
+    marquer pendant quatre matchs, elle ne se crée jamais 0,00 xG, mais une
+    série de xG très faibles pousse le paramètre aussi sûrement vers l'infini.
     """
     home_adv = params[0]
     attack_libre = params[1:n_teams]
@@ -89,6 +97,12 @@ def _log_vraisemblance_xg(
     total = float(np.sum(poids * ll))
     if not np.isfinite(total):
         return PENALITE
+
+    if sigma_forces > 0:
+        penalite = (float(np.sum(attack**2)) + float(np.sum(defense**2))) / (
+            2.0 * sigma_forces**2
+        )
+        return -total + penalite
     return -total
 
 
@@ -125,6 +139,7 @@ def fit_dixon_coles_xg(
     reference_date: pd.Timestamp | None = None,
     competition_id: Any = None,
     max_iterations: int = 500,
+    sigma_forces: float = SIGMA_FORCES,
 ) -> DixonColesModel:
     """Ajuster un Dixon-Coles dont les forces viennent des xG.
 
@@ -182,7 +197,11 @@ def fit_dixon_coles_xg(
             np.full(n_teams, -np.log(moyenne_ext)),
         ]
     )
-    bornes = [(-1.0, 1.0)] + [(-3.0, 3.0)] * (n_teams - 1) + [(-3.0, 3.0)] * n_teams
+    bornes = (
+        [(-1.0, 1.0)]
+        + [(-BORNE_FORCE, BORNE_FORCE)] * (n_teams - 1)
+        + [(-BORNE_FORCE, BORNE_FORCE)] * n_teams
+    )
 
     logger.info(
         f"Ajustement Dixon-Coles sur xG : {len(couverts)} matchs, {n_teams} équipes, xi={xi}"
@@ -190,7 +209,7 @@ def fit_dixon_coles_xg(
     resultat = minimize(
         _log_vraisemblance_xg,
         depart,
-        args=(home_idx, away_idx, home_xg, away_xg, poids, n_teams),
+        args=(home_idx, away_idx, home_xg, away_xg, poids, n_teams, sigma_forces),
         method="L-BFGS-B",
         bounds=bornes,
         options={"maxiter": max_iterations},
@@ -217,9 +236,18 @@ def fit_dixon_coles_xg(
 
     rho = _ajuster_rho(lam[notes], mu[notes], buts_dom, buts_ext, poids[notes])
 
+    matchs_par_equipe = (
+        couverts["home_team_id"]
+        .value_counts()
+        .add(couverts["away_team_id"].value_counts(), fill_value=0)
+    ).astype(int)
+
     modele = DixonColesModel(
         attack={team_id: float(attack[i]) for team_id, i in index.items()},
         defense={team_id: float(defense[i]) for team_id, i in index.items()},
+        matchs_par_equipe={
+            int(team_id): int(matchs_par_equipe.get(team_id, 0)) for team_id in index
+        },
         home_advantage=home_advantage,
         rho=rho,
         n_matches=int(len(couverts)),
