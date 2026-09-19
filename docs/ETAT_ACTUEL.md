@@ -1,15 +1,15 @@
 # État actuel du projet
 
 > Fichier de référence à lire en premier. Tenir à jour après chaque session.
-> Dernière mise à jour : 2026-09-08.
+> Dernière mise à jour : 2026-09-19.
 
 ## Projet
 Moteur de pronostic football (Premier League, La Liga, Serie A, Bundesliga, Ligue 1).
 
 ## État Git
 - Branche : `claude/audit-lecture-seule-s5yd7b`
-- Working tree : **propre**
-- Suite de tests : **623 réussis, 0 ignoré** (scikit-learn installé : les
+- Working tree : **propre**, branche poussée sur `origin` (`main` reste 58 commits en arrière)
+- Suite de tests : **645 réussis, 0 ignoré** (scikit-learn installé : les
   quatre tests de calibration ne s'ignorent plus) (les tests ignorés sont les
   garde-fous anti-production, actifs uniquement si `data/pronostic.db` existe)
 - Sans l'extra `ml` : **425 réussis, 7 ignorés** — les quatre tests de
@@ -152,9 +152,9 @@ pas retenir de sélection 1N2 sur ce critère.
 
 Ces chiffres ne portaient que sur la Premier League, avec 259 à 416 paris.
 **Ils sont périmés** : la mesure du 09/09/2026 sur les cinq championnats
-(3 504 matchs) est plus bas dans ce document et fait autorité. L'Over/Under,
-qui gardait ici un signe positif « indéterminé faute de volume », y ressort
-négatif et démontré.
+(3 504 matchs) est plus bas dans ce document, corrigée le 19/09. L'Over/Under,
+qui gardait ici un signe positif « indéterminé faute de volume », l'est
+resté : la mesure qui le donnait perdant ne dépendait pas du modèle.
 
 ### ✅ Chaque championnat est désormais prédit par son propre modèle
 `train_models.py` entraîne **par compétition** et enregistre chaque modèle sous
@@ -321,20 +321,28 @@ contre les cotes de clôture. Bootstrap à 95 % par pari
 
 | Marché / stratégie | Paris | ROI | IC 95 % | Verdict |
 |---|---|---|---|---|
-| 1N2 | 9 372 | −5,44 % | [−8,73 ; −2,20] | **perdant, démontré** |
-| **Over/Under** | 6 248 | **−3,46 %** | **[−6,05 ; −1,00]** | **perdant, démontré** |
+| ~~1N2~~ | 9 372 | −5,44 % | [−8,73 ; −2,20] | ⚠️ **ne mesure pas le moteur** |
+| ~~Over/Under~~ | 6 248 | −3,46 % | [−6,05 ; −1,00] | ⚠️ **ne mesure pas le moteur** |
 | `edge ≥ 2 %` | 6 170 | −6,76 % | [−10,51 ; −3,06] | perdant, démontré |
 | `edge ≥ 5 %` | 4 194 | −7,23 % | [−11,46 ; −2,68] | perdant, démontré |
 | Favori du marché | 3 124 | +0,33 % | [−3,19 ; +3,65] | nul |
 
-**L'Over/Under était la dernière piste crédible. Elle est morte.** Mesuré à
-+3,97 % sur 262 paris, avec un intervalle [−11,36 ; +19,74] qui n'autorisait
-aucune conclusion, il ressort à −3,46 % sur 6 248 paris. Le volume n'a pas
-confirmé l'intuition : il l'a réfutée.
+> ⚠️ **Les deux premières lignes sont à jeter.** Elles misent sur *toutes* les
+> sélections du marché — les trois issues de chaque 1N2 — sans regarder la
+> probabilité du modèle. Elles ne mesurent donc pas le moteur mais la marge du
+> bookmaker. Démonstration et correction plus bas, section du 19/09/2026.
+> Seules les lignes `edge ≥ …` portent une conclusion sur le moteur.
+
+~~**L'Over/Under était la dernière piste crédible. Elle est morte.**~~ Cette
+conclusion, tirée le 09/09 du −3,46 % ci-dessus, **est retirée** : le chiffre
+qui la fondait ne dépendait pas du modèle. Mesuré par sélection sur l'edge,
+l'Over/Under n'est ni gagnant ni démontré perdant — il reste indéterminé.
 
 La perte est **uniforme** : aucun des dix couples championnat × marché
 n'atteint seul la significativité, mais les dix vont dans le même sens, de
-−1,83 % à −6,70 %.
+−1,83 % à −6,70 %. ⚠️ Ces dix chiffres souffrent du même défaut que les deux
+premières lignes du tableau — ils sont calculés sans seuil d'edge, et mesurent
+la marge locale de chaque marché, non le moteur.
 
 | Championnat | 1N2 | Over/Under |
 |---|---|---|
@@ -351,17 +359,116 @@ dépasse pas la marge du bookmaker.
 
 Reproduire : `python scripts/mesurer_backtest.py --version dc-final`.
 
+## La piste xG mesurée, et un défaut de mesure — 19/09/2026
+
+### Le modèle ajusté sur les xG n'apporte pas l'avantage cherché
+
+`models/dixon_coles_xg.py` estime les forces d'attaque et de défense depuis les
+buts attendus plutôt que depuis les scores — quasi-vraisemblance de Poisson sur
+observations continues, rho toujours ajusté sur les buts réels. Entraîné au
+protocole D-02 (`--cible xg`), il a produit 154 070 prédictions sur les mêmes
+3 504 matchs de test que `dc-final`.
+
+Il classe très légèrement mieux, et ne gagne pas davantage :
+
+| Marché | AUC `dc-final` | AUC `dc-xg` | Brier `dc-final` | Brier `dc-xg` |
+|---|---|---|---|---|
+| 1N2 | 0,6694 | 0,6687 | 0,2039 | 0,2038 |
+| Over/Under | 0,7586 | **0,7615** | 0,1757 | **0,1744** |
+| BTTS | 0,5316 | **0,5574** | 0,2507 | **0,2495** |
+| Over/Under 1re MT | 0,7697 | 0,7697 | 0,1793 | 0,1793 |
+
+Le BTTS est le seul gain net — 2,6 points d'AUC, cohérent avec l'argument de
+départ : c'est le marché où le bruit de conversion pèse le plus. La première
+mi-temps est inchangée au chiffre près, et c'est la vérification que
+l'implémentation fait ce qu'elle annonce : faute de xG par période, ces modèles
+restent ajustés sur les buts dans les deux cas.
+
+Côté rendement, l'écart est dans le bruit :
+
+| Stratégie | `dc-final` | `dc-xg` |
+|---|---|---|
+| `edge ≥ 2 %` | −6,76 % | −6,43 % |
+| `edge ≥ 5 %` | −7,23 % | −6,62 % |
+
+Un demi-point gagné, des intervalles qui se recouvrent presque entièrement, et
+les deux restent **perdants avec signe établi**. La piste xG ne renverse rien.
+
+Reproduire : `python scripts/mesurer_backtest.py --version dc-xg`.
+
+### Le défaut : le ROI « par marché » ne dépend pas du modèle
+
+Les deux backtests rendent le **même** ROI par marché, au centième : −5,44 % sur
+le 1N2, −3,46 % sur l'Over/Under. Sur 9 372 paris, une telle coïncidence n'existe
+pas. Vérification en base, sur les 101 859 sélections communes aux deux versions :
+
+| Colonne | lignes différentes | écart max |
+|---|---|---|
+| `probability` | **101 859 / 101 859** | 0,238 |
+| `edge` | 15 620 / 101 859 | 0,195 |
+| `offered_odds` | 0 | 0 |
+| `gagnant` | 0 | 0 |
+
+Les deux modèles sont donc bien distincts — toutes leurs probabilités diffèrent.
+Mais `_rendements()` est appelé avec `edge_minimal = 0` pour le bloc `par_marche`
+(`evaluation/backtest.py:288`) : il mise une unité sur **chaque sélection
+pariable**, soit les trois issues de chaque 1N2. D'où 9 372 = 3 124 × 3 paris et
+exactement 3 124 gagnants — un par match, par construction. Le résultat ne
+dépend que des cotes et des scores, tous deux identiques entre les versions.
+
+**Ce chiffre mesure la marge du bookmaker, pas le moteur.** Il vaudrait la même
+chose avec un modèle tirant ses probabilités au hasard.
+
+### La mesure refaite, par marché *et* par seuil d'edge
+
+C'est le croisement qui manquait : le bloc `par_marche` ignore l'edge, les blocs
+`edge_*` mélangent les marchés. Même bootstrap, mêmes cotes de clôture, filtre
+de cote [1,20 ; 10,00] :
+
+| Marché | Seuil | `dc-final` | `dc-xg` | Verdict |
+|---|---|---|---|---|
+| 1N2 | ≥ 0 % | −8,18 % (4 553) | −8,86 % (4 524) | **perdant, démontré** |
+| 1N2 | ≥ 2 % | −10,03 % (3 567) | −8,52 % (3 610) | **perdant, démontré** |
+| 1N2 | ≥ 5 % | −9,85 % (2 328) | −9,40 % (2 369) | **perdant, démontré** |
+| 1N2 | ≥ 10 % | −3,98 % (1 081) | −3,51 % (1 107) | nul |
+| Over/Under | ≥ 0 % | −2,17 % (3 123) | −3,63 % (3 123) | nul |
+| Over/Under | ≥ 2 % | −2,28 % (2 603) | −3,46 % (2 543) | nul |
+| Over/Under | ≥ 5 % | −3,97 % (1 866) | −3,04 % (1 836) | nul |
+| Over/Under | ≥ 10 % | −1,83 % (963) | +1,10 % (862) | nul |
+
+Deux enseignements, l'un confirmé et l'autre rouvert :
+
+- **Le 1N2 par edge est bien perdant, et la conclusion tient** — elle est même
+  plus franche qu'annoncée (−8 à −10 %, contre −5,44 %) et résiste au changement
+  de modèle. C'est le résultat le plus solide du projet.
+- **L'Over/Under n'est pas démontré perdant.** Aucun de ses huit intervalles
+  n'exclut zéro. Le projet avait acté sa mort le 09/09 sur un chiffre qui ne le
+  concernait pas ; il redevient ce qu'il était : indéterminé, faute de volume.
+
+### Ce qui reste à corriger dans le code
+
+`_rendements(edge_minimal=0)` n'est pas faux en soi — connaître la marge du
+marché a un intérêt — mais il est **mal nommé et mal lu**. À trancher :
+le renommer sans ambiguïté (`cout_de_la_marge`), ou lui donner un seuil d'edge
+et le faire mesurer le moteur. Aucune de ces deux options n'a été prise ici :
+la mesure du 19/09 a été faite hors du script, sans toucher à
+`evaluation/backtest.py`.
+
 ## Prochaine action
 **Trancher entre deux voies.** D-06 interdit de publier des coupons sans
-rendement positif, et plus aucun marché n'en montre.
+rendement positif, et aucun marché n'en montre.
 
-1. **Chercher l'avantage ailleurs que dans le score.** Le moteur reproduit ce
-   que le marché sait déjà. Les 28 004 lignes de xG ne servent aujourd'hui
-   qu'aux features de forme ; un modèle qui prédit **depuis les xG** plutôt que
-   depuis les buts est la seule idée non essayée.
+1. ~~**Chercher l'avantage ailleurs que dans le score.**~~ **Fait le
+   19/09/2026** : le modèle ajusté sur les xG est écrit, entraîné et mesuré. Il
+   ne renverse pas le signe. La seule idée non essayée l'a été.
 2. **Acter que le projet ne bat pas le marché** sur ces données, et le
    réorienter vers ce qu'il fait bien : classer, expliquer, mesurer — sans
    promesse de rendement.
+3. **Nouveau — instruire l'Over/Under, rouvert par la correction du 19/09.**
+   Il n'est plus démontré perdant, seulement indéterminé : huit intervalles sur
+   huit recouvrent zéro, sur 862 à 3 123 paris. Ce qui manque est du volume, pas
+   une idée — et le volume suppose le corpus complet, donc une source
+   accessible. C'est la seule piste de rendement qui ne soit pas fermée.
 
 C'est une décision de cadrage, pas de code : elle revient à l'utilisateur.
 

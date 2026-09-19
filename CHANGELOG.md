@@ -1,5 +1,29 @@
 # Historique
 
+## 2026-09-19 - Le xG mesuré, et un chiffre qui ne mesurait rien
+
+- **Dixon-Coles ajusté sur les buts attendus** (`models/dixon_coles_xg.py`) —
+  quasi-vraisemblance de Poisson sur observations continues, rho estimé dans un
+  second temps sur les buts réels, modèle interchangeable avec celui ajusté sur
+  les scores. `train_models.py --cible xg` entraîne l'un ou l'autre au même
+  protocole.
+- **Verdict : la piste ne renverse rien.** Gains probabilistes réels mais
+  minces — BTTS de 0,532 à 0,557 d'AUC, Over/Under de 0,759 à 0,762 — et
+  rendement toujours perdant avec signe établi (`edge ≥ 5 %` : −7,23 % à
+  −6,62 %). C'était la dernière idée non essayée.
+- **Un défaut de mesure découvert par cette comparaison.** Les deux modèles
+  rendaient le *même* ROI par marché au centième, alors que 100 % de leurs
+  probabilités diffèrent. Le bloc `par_marche` du backtest mise sur toutes les
+  sélections — les trois issues de chaque 1N2 — sans regarder le modèle : il
+  mesure la marge du bookmaker, et vaudrait autant avec des probabilités
+  tirées au hasard.
+- **Conséquence : « l'Over/Under est démontré perdant » est retiré.** Cette
+  conclusion du 09/09 reposait sur ce chiffre. Mesuré par seuil d'edge, aucun
+  de ses huit intervalles n'exclut zéro : il redevient indéterminé.
+- **Le 1N2 par edge, lui, est confirmé et aggravé** : −8 à −10 % selon le
+  seuil, contre −5,44 % annoncé, et le changement de modèle n'y fait rien.
+- Suite : **645 réussis, 0 ignoré**.
+
 ## 2026-09-07 - Étape 6 b : les calculs dérivés qui manquaient
 
 - **Dix variables de première mi-temps** (`features/half_time.py`) — quinze
