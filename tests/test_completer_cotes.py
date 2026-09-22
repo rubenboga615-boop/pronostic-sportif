@@ -186,3 +186,128 @@ class TestComplétion:
         session.close()
         assert ouvertures
         assert all(o.captured_at is None for o in ouvertures)
+
+
+class TestIdempotenceDeLImport:
+    """`historical_import` ne duplique pas les cotes — et ne les rattrape pas.
+
+    Les deux moitiés de la réponse comptent autant l'une que l'autre. Un match
+    déjà présent est classé « doublon » et sa ligne abandonnée, cotes
+    comprises : relancer l'import ne crée aucun doublon, mais ne corrige rien
+    non plus. C'est la raison d'être de ce module, et c'est ce qui décide de la
+    marche à suivre quand le parseur gagne des colonnes après coup — le cas
+    s'est produit deux fois.
+    """
+
+    # Fichier à l'ancienne : agrégats Betbrain, aucune colonne moderne. Avant
+    # la correction du parseur, il ne produisait aucune cote Over/Under.
+    CSV_BETBRAIN = (
+        "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,HTHG,HTAG,HTR,"
+        "B365H,B365D,B365A,BbMxH,BbMxD,BbMxA,BbMx>2.5,BbMx<2.5\n"
+        "E0,13/08/2016,Arsenal,Chelsea,2,1,H,1,0,H,"
+        "2.10,3.40,3.60,2.20,3.55,3.80,1.95,1.98\n"
+    )
+
+    @pytest.fixture
+    def terrain(self, tmp_path, monkeypatch):
+        """Base vide, plus le fichier à importer. Aucun match pré-créé."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        import pipelines.completer_cotes as module
+        from app.models import Competition, Season
+
+        moteur = create_engine(f"sqlite:///{tmp_path / 'idem.db'}")
+        Base.metadata.create_all(moteur)
+        fabrique = sessionmaker(bind=moteur)
+        monkeypatch.setattr(module, "SessionLocal", fabrique)
+
+        session = fabrique()
+        comp = Competition(name="Premier League", country="England", provider_code="E0")
+        session.add(comp)
+        session.flush()
+        saison = Season(competition_id=comp.id, season_name="1617")
+        session.add(saison)
+        session.commit()
+
+        csv = tmp_path / "E0_1617.csv"
+        csv.write_text(self.CSV_BETBRAIN, encoding="utf-8")
+        return fabrique, session, comp, saison, csv
+
+    @staticmethod
+    def _importer(session, comp, saison, csv):
+        from collectors.football_data.parser import parse_csv
+        from pipelines.historical_import import _process_match_row
+
+        ligne = parse_csv(csv).iloc[0]
+        resultat = _process_match_row(session, ligne, comp, saison, "E0", "England")
+        session.commit()
+        return resultat
+
+    @staticmethod
+    def _amputer(session):
+        """Retirer ce que l'ancien parseur ne savait pas lire."""
+        session.query(OddsSnapshot).filter(
+            (OddsSnapshot.bookmaker == "Max") | (OddsSnapshot.market == "over_under")
+        ).delete(synchronize_session=False)
+        session.commit()
+
+    def test_un_second_import_ne_duplique_aucune_cote(self, terrain):
+        from sqlalchemy import func
+
+        _, session, comp, saison, csv = terrain
+
+        premier = self._importer(session, comp, saison, csv)
+        apres_un = session.query(func.count(OddsSnapshot.id)).scalar()
+        second = self._importer(session, comp, saison, csv)
+
+        assert premier["disposition"] == "inserted"
+        assert premier["odds"] > 0
+        assert second["disposition"] == "duplicate"
+        assert second["odds"] == 0
+        assert session.query(func.count(OddsSnapshot.id)).scalar() == apres_un
+        assert session.query(func.count(Match.id)).scalar() == 1
+
+    def test_un_second_import_ne_rattrape_rien_non_plus(self, terrain):
+        """L'autre moitié, et c'est elle qui dicte la marche à suivre.
+
+        Une cote jamais lue — faute d'une colonne que le parseur ignorait — ne
+        revient pas par un réimport : le match existe, sa ligne est abandonnée
+        avant même qu'on regarde ses cotes.
+        """
+        from sqlalchemy import func
+
+        _, session, comp, saison, csv = terrain
+        self._importer(session, comp, saison, csv)
+        self._amputer(session)
+        ampute = session.query(func.count(OddsSnapshot.id)).scalar()
+
+        self._importer(session, comp, saison, csv)
+
+        assert session.query(func.count(OddsSnapshot.id)).scalar() == ampute, (
+            "le réimport a rattrapé des cotes, ce qu'il n'est pas censé faire"
+        )
+
+    def test_completer_cotes_rattrape_ce_que_l_import_ne_rattrape_pas(self, terrain):
+        """Le chemin complet : importer, amputer, rattraper, relancer."""
+        from sqlalchemy import func
+
+        from pipelines.completer_cotes import completer_cotes
+
+        fabrique, session, comp, saison, csv = terrain
+        self._importer(session, comp, saison, csv)
+        complet = session.query(func.count(OddsSnapshot.id)).scalar()
+        self._amputer(session)
+        session.close()
+
+        rapport = completer_cotes([csv], "E0")
+
+        assert rapport["cotes_ajoutees"] > 0
+        assert rapport["matchs_introuvables"] == 0
+        with fabrique() as lecture:
+            assert lecture.query(func.count(OddsSnapshot.id)).scalar() == complet
+            assert "over_under" in {s.market for s in lecture.query(OddsSnapshot).all()}
+            assert "Max" in {s.bookmaker for s in lecture.query(OddsSnapshot).all()}
+
+        # Et la relance ne crée rien.
+        assert completer_cotes([csv], "E0")["cotes_ajoutees"] == 0
