@@ -88,13 +88,77 @@ class TestSuiviDesColonnes:
 
         rapport = inspecter_colonnes(list(RESULT_COLUMNS))
 
-        assert rapport == {"manquantes_requises": [], "manquantes_tolerees": []}
+        assert rapport == {
+            "manquantes_requises": [],
+            "manquantes_tolerees": [],
+            "cotes_ignorees": [],
+        }
 
-    def test_bbmx_n_est_plus_attendue(self):
-        """Les colonnes mortes ne doivent plus figurer parmi les attendues."""
+    def test_les_colonnes_betbrain_sont_lues(self):
+        """Elles ne sont pas mortes : c'est l'ancien nom des agrégats.
+
+        Football-Data a renommé `BbMx` en `Max` et `BbAv` en `Avg` en 2019/20.
+        Les avoir prises pour des colonnes obsolètes coûtait les cotes de trois
+        saisons sur onze — 20 034 matchs sur le corpus complet — et
+        l'inspection ne pouvait rien signaler, puisque la colonne n'avait pas
+        disparu du fichier : elle avait disparu du parseur.
+        """
         from collectors.football_data.parser import RESULT_COLUMNS
 
-        assert not [c for c in RESULT_COLUMNS if c.startswith("BbMx")]
+        for ancienne, moderne in (
+            ("BbMxH", "MaxH"),
+            ("BbAvA", "AvgA"),
+            ("BbMx>2.5", "Max>2.5"),
+            ("BbAv<2.5", "Avg<2.5"),
+        ):
+            assert ancienne in RESULT_COLUMNS, ancienne
+            assert RESULT_COLUMNS[ancienne] == RESULT_COLUMNS[moderne], (
+                f"{ancienne} et {moderne} désignent la même grandeur"
+            )
+
+    def test_une_graphie_d_epoque_absente_n_est_pas_une_anomalie(self):
+        """`BbMxH` manque dans un fichier moderne, et c'est normal.
+
+        Sans cette distinction, chaque fichier signalerait une dizaine de
+        fausses disparitions, et on cesserait de lire le rapport — ce qui
+        rendrait le contrôle inutile au moment précis où il servirait.
+        """
+        modernes = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "MaxH", "MaxD", "MaxA"]
+
+        rapport = inspecter_colonnes(modernes)
+
+        assert not [c for c in rapport["manquantes_tolerees"] if c.startswith("Bb")]
+        assert "MaxH" not in rapport["manquantes_tolerees"]
+
+    def test_une_cote_presente_et_lue_par_personne_est_signalee(self):
+        """Le contrôle qui manquait, et qui aurait attrapé le défaut Betbrain.
+
+        L'inspection ne regardait que ce qui manquait, jamais ce qui était
+        offert par la source et laissé de côté. Les colonnes Betbrain étaient
+        remplies à 100 %, et rien ne disait qu'elles partaient à la poubelle.
+        """
+        avec_inconnue = [
+            "Date",
+            "HomeTeam",
+            "AwayTeam",
+            "FTHG",
+            "FTAG",
+            "NEWBOOKH",
+            "NEWBOOKD",
+            "NEWBOOKA",
+        ]
+
+        rapport = inspecter_colonnes(avec_inconnue)
+
+        assert set(rapport["cotes_ignorees"]) == {"NEWBOOKH", "NEWBOOKD", "NEWBOOKA"}
+
+    def test_les_marches_hors_perimetre_ne_sont_pas_signales(self):
+        """Le handicap asiatique est de Phase 2 : l'ignorer est une décision."""
+        rapport = inspecter_colonnes(
+            ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "B365AHH", "AHh", "BFH"]
+        )
+
+        assert rapport["cotes_ignorees"] == []
 
 
 class TestSeriesDeCotes:
@@ -147,6 +211,49 @@ class TestInsertionEnBase:
 
         assert {snap.selection for snap in ou} == {"over_2.5", "under_2.5"}
         assert sorted(snap.odds for snap in ou) == pytest.approx([1.80, 2.05])
+
+    def test_un_fichier_d_avant_2019_donne_bien_ses_cotes(self, contexte, tmp_path):
+        """Le défaut, vérifié de bout en bout sur un fichier à l'ancienne.
+
+        Avant la correction, un CSV Betbrain produisait **zéro** relevé
+        Over/Under — mesuré sur 1617/E0 : 1 520 relevés manquants pour un seul
+        fichier, 20 034 matchs sur le corpus complet.
+        """
+        ancien = tmp_path / "E0_1617.csv"
+        ancien.write_text(
+            "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,HTHG,HTAG,HTR,"
+            "B365H,B365D,B365A,BbMxH,BbMxD,BbMxA,BbAvH,BbAvD,BbAvA,"
+            "BbMx>2.5,BbAv>2.5,BbMx<2.5,BbAv<2.5\n"
+            "E0,13/08/2016,Arsenal,Chelsea,2,1,H,1,0,H,"
+            "2.10,3.40,3.60,2.20,3.55,3.80,2.05,3.30,3.50,"
+            "1.95,1.88,1.98,1.92\n",
+            encoding="utf-8",
+        )
+
+        self._importer(contexte, ancien)
+
+        with Session(engine) as lecture:
+            ou = lecture.query(OddsSnapshot).filter_by(market="over_under").all()
+            agregats = lecture.query(OddsSnapshot).filter_by(bookmaker="Max").all()
+
+        assert {s.selection for s in ou} == {"over_2.5", "under_2.5"}
+        # La meilleure cote du marché est celle de BbMx, lue comme `Max`.
+        prix = {(s.market, s.selection): s.odds for s in agregats}
+        assert prix[("1N2", "home")] == pytest.approx(2.20)
+        assert prix[("over_under", "over_2.5")] == pytest.approx(1.95)
+
+    def test_les_agregats_sont_marques_comme_tels(self, contexte, fichier_csv):
+        """Ils doivent être reconnaissables en base, pour que la valorisation
+        puisse les écarter du calcul de la probabilité de marché."""
+        from evaluation.pricing import AGREGATS_DE_MARCHE
+
+        self._importer(contexte, fichier_csv)
+
+        with Session(engine) as lecture:
+            books = {s.bookmaker for s in lecture.query(OddsSnapshot).all()}
+
+        assert books & AGREGATS_DE_MARCHE, "aucun agrégat persisté"
+        assert books - AGREGATS_DE_MARCHE, "aucun bookmaker réel persisté"
 
     def test_les_cotes_d_ouverture_ne_sont_pas_datees(self, contexte, fichier_csv):
         """Football-Data ne publie pas l'instant du relevé d'ouverture.

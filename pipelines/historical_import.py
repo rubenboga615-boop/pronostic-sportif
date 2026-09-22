@@ -146,6 +146,119 @@ SERIES_DE_COTES: tuple[dict[str, object], ...] = (
             "under_2.5": "odds_pinnacle_close_under_25",
         },
     },
+    # Bookmakers complets supplémentaires à la clôture. Le projet n'en avait
+    # que deux — Bet365 et Pinnacle —, ce qui laissait peu de candidats au
+    # calcul de la marge minimale.
+    {
+        "bookmaker": "BW_close",
+        "market": "1N2",
+        "is_closing": True,
+        "selections": {
+            "home": "odds_bw_close_home",
+            "draw": "odds_bw_close_draw",
+            "away": "odds_bw_close_away",
+        },
+    },
+    {
+        "bookmaker": "IW_close",
+        "market": "1N2",
+        "is_closing": True,
+        "selections": {
+            "home": "odds_iw_close_home",
+            "draw": "odds_iw_close_draw",
+            "away": "odds_iw_close_away",
+        },
+    },
+    # ── Agrégats de marché ──────────────────────────────────────────────
+    #
+    # `Max` est la meilleure cote publiée du marché, `Avg` la moyenne. Ils
+    # étaient parsés depuis longtemps et n'atteignaient **aucune** série : la
+    # base n'a jamais contenu autre chose que Bet365, Bwin, Interwetten et
+    # Pinnacle. Le « meilleur prix disponible » du backtest était donc le
+    # meilleur de ces quatre-là, pas celui du marché — 3,57 % de cote perdue
+    # sur le 1N2, 1,87 % sur l'Over/Under.
+    #
+    # ⚠️ Ce ne sont pas des bookmakers. `evaluation/pricing.py` les retient
+    # pour le prix obtenu et les **écarte** du calcul de la probabilité de
+    # marché : la marge de `Max` est minimale par construction, il gagnerait
+    # toujours le concours de marge minimale et rétrécirait l'edge de tous les
+    # paris sans qu'on puisse réellement parier ce carnet-là.
+    {
+        "bookmaker": "Max",
+        "market": "1N2",
+        "is_closing": False,
+        "selections": {
+            "home": "max_odds_home",
+            "draw": "max_odds_draw",
+            "away": "max_odds_away",
+        },
+    },
+    {
+        "bookmaker": "Max_close",
+        "market": "1N2",
+        "is_closing": True,
+        "selections": {
+            "home": "max_odds_close_home",
+            "draw": "max_odds_close_draw",
+            "away": "max_odds_close_away",
+        },
+    },
+    {
+        "bookmaker": "Max",
+        "market": "over_under",
+        "is_closing": False,
+        "selections": {
+            "over_2.5": "max_odds_over_25",
+            "under_2.5": "max_odds_under_25",
+        },
+    },
+    {
+        "bookmaker": "Max_close",
+        "market": "over_under",
+        "is_closing": True,
+        "selections": {
+            "over_2.5": "max_odds_close_over_25",
+            "under_2.5": "max_odds_close_under_25",
+        },
+    },
+    {
+        "bookmaker": "Avg",
+        "market": "1N2",
+        "is_closing": False,
+        "selections": {
+            "home": "avg_odds_home",
+            "draw": "avg_odds_draw",
+            "away": "avg_odds_away",
+        },
+    },
+    {
+        "bookmaker": "Avg_close",
+        "market": "1N2",
+        "is_closing": True,
+        "selections": {
+            "home": "avg_odds_close_home",
+            "draw": "avg_odds_close_draw",
+            "away": "avg_odds_close_away",
+        },
+    },
+    {
+        "bookmaker": "Avg",
+        "market": "over_under",
+        "is_closing": False,
+        "selections": {
+            "over_2.5": "avg_odds_over_25",
+            "under_2.5": "avg_odds_under_25",
+        },
+    },
+    {
+        "bookmaker": "Avg_close",
+        "market": "over_under",
+        "is_closing": True,
+        "selections": {
+            "over_2.5": "avg_odds_close_over_25",
+            "under_2.5": "avg_odds_close_under_25",
+        },
+    },
 )
 
 

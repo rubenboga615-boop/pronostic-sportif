@@ -47,14 +47,26 @@ RESULT_COLUMNS = {
     "B365CH": "odds_b365_close_home",
     "B365CD": "odds_b365_close_draw",
     "B365CA": "odds_b365_close_away",
-    # Cotes BWin
+    # Cotes BWin (ouverture et clôture). La clôture n'était pas lue : c'est le
+    # nouveau contrôle `cotes_ignorees` qui l'a signalée à sa première
+    # exécution. Un bookmaker complet de plus à la clôture, c'est un candidat
+    # de plus au calcul de la marge minimale — là où le projet ne disposait
+    # que de Bet365 et Pinnacle.
     "BWH": "odds_bw_home",
     "BWD": "odds_bw_draw",
     "BWA": "odds_bw_away",
-    # Cotes Interwetten
+    "BWCH": "odds_bw_close_home",
+    "BWCD": "odds_bw_close_draw",
+    "BWCA": "odds_bw_close_away",
+    # Cotes Interwetten (ouverture et clôture). Interwetten a cessé d'être
+    # publié entre 2023/24 et 2024/25 : son absence est attendue sur les
+    # saisons récentes, et l'inspection la signale sans la traiter en anomalie.
     "IWH": "odds_iw_home",
     "IWD": "odds_iw_draw",
     "IWA": "odds_iw_away",
+    "IWCH": "odds_iw_close_home",
+    "IWCD": "odds_iw_close_draw",
+    "IWCA": "odds_iw_close_away",
     # Cotes Pinnacle (ouverture)
     "PSH": "odds_pinnacle_home",
     "PSD": "odds_pinnacle_draw",
@@ -63,13 +75,40 @@ RESULT_COLUMNS = {
     "PSCH": "odds_pinnacle_close_home",
     "PSCD": "odds_pinnacle_close_draw",
     "PSCA": "odds_pinnacle_close_away",
-    # Meilleure cote et cote moyenne du marché (anciennement BbMx / BbAv)
+    # Agrégats de marché : meilleure cote disponible et cote moyenne.
+    #
+    # Football-Data les a renommés en 2019/20 — `BbMx` est devenu `Max`, `BbAv`
+    # est devenu `Avg`. Les deux graphies désignent la même grandeur et pointent
+    # donc vers la même cible : le reste du code ignore l'époque du fichier.
+    # Elles ne coexistent jamais dans un même fichier.
+    #
+    # Ne lire que les noms modernes coûtait les cotes de trois saisons sur onze
+    # — 20 034 matchs sur le corpus complet — sans qu'aucune alerte ne se
+    # déclenche, puisque la colonne n'avait pas disparu : elle avait changé de
+    # nom.
     "MaxH": "max_odds_home",
+    "BbMxH": "max_odds_home",
     "MaxD": "max_odds_draw",
+    "BbMxD": "max_odds_draw",
     "MaxA": "max_odds_away",
+    "BbMxA": "max_odds_away",
     "AvgH": "avg_odds_home",
+    "BbAvH": "avg_odds_home",
     "AvgD": "avg_odds_draw",
+    "BbAvD": "avg_odds_draw",
     "AvgA": "avg_odds_away",
+    "BbAvA": "avg_odds_away",
+    # Agrégats à la clôture. Ils n'étaient lus par personne, alors que c'est
+    # contre la clôture que le rendement est mesuré : chaque pari était donc
+    # valorisé au meilleur de Bet365 et Pinnacle, et non au meilleur du marché.
+    # Mesuré sur six saisons et cinq championnats, l'écart est de +3,57 % sur
+    # le 1N2 et +1,87 % sur l'Over/Under — autant de rendement perdu.
+    "MaxCH": "max_odds_close_home",
+    "MaxCD": "max_odds_close_draw",
+    "MaxCA": "max_odds_close_away",
+    "AvgCH": "avg_odds_close_home",
+    "AvgCD": "avg_odds_close_draw",
+    "AvgCA": "avg_odds_close_away",
     # Over/Under 2,5 buts — marché de Phase 1, longtemps ignoré à l'import
     # alors que la source le fournit, ouverture et clôture.
     "B365>2.5": "odds_b365_over_25",
@@ -81,10 +120,33 @@ RESULT_COLUMNS = {
     "PC>2.5": "odds_pinnacle_close_over_25",
     "PC<2.5": "odds_pinnacle_close_under_25",
     "Max>2.5": "max_odds_over_25",
+    "BbMx>2.5": "max_odds_over_25",
     "Max<2.5": "max_odds_under_25",
+    "BbMx<2.5": "max_odds_under_25",
     "Avg>2.5": "avg_odds_over_25",
+    "BbAv>2.5": "avg_odds_over_25",
     "Avg<2.5": "avg_odds_under_25",
+    "BbAv<2.5": "avg_odds_under_25",
+    "MaxC>2.5": "max_odds_close_over_25",
+    "MaxC<2.5": "max_odds_close_under_25",
+    "AvgC>2.5": "avg_odds_close_over_25",
+    "AvgC<2.5": "avg_odds_close_under_25",
 }
+
+
+def familles_de_colonnes() -> dict[str, tuple[str, ...]]:
+    """Cible -> graphies qui l'alimentent, toutes époques confondues.
+
+    Obtenue en inversant :data:`RESULT_COLUMNS`. Deux graphies partageant une
+    cible sont, par construction, deux noms de la même grandeur — c'est ce qui
+    permet à :func:`inspecter_colonnes` de ne pas signaler `BbMxH` comme
+    manquante dans un fichier moderne, ni `MaxH` dans un fichier ancien.
+    """
+    familles: dict[str, list[str]] = {}
+    for source, cible in RESULT_COLUMNS.items():
+        familles.setdefault(cible, []).append(source)
+    return {cible: tuple(sources) for cible, sources in familles.items()}
+
 
 # Colonnes sans lesquelles une ligne n'est pas un match exploitable.
 COLONNES_REQUISES: tuple[str, ...] = (
@@ -101,43 +163,76 @@ COLONNES_REQUISES: tuple[str, ...] = (
 # et 2024/25 sans que rien ne l'indique.
 COLONNES_TOLEREES: frozenset[str] = frozenset(RESULT_COLUMNS) - frozenset(COLONNES_REQUISES)
 
-# Colonnes numériques à convertir
-NUMERIC_COLUMNS = [
-    "home_goals",
-    "away_goals",
-    "home_ht_goals",
-    "away_ht_goals",
-    "home_shots",
-    "away_shots",
-    "home_shots_on_target",
-    "away_shots_on_target",
-    "home_corners",
-    "away_corners",
-    "home_fouls",
-    "away_fouls",
-    "home_yellow",
-    "away_yellow",
-    "home_red",
-    "away_red",
-    "odds_b365_home",
-    "odds_b365_draw",
-    "odds_b365_away",
-    "odds_b365_close_home",
-    "odds_b365_close_draw",
-    "odds_b365_close_away",
-    "odds_bw_home",
-    "odds_bw_draw",
-    "odds_bw_away",
-    "odds_iw_home",
-    "odds_iw_draw",
-    "odds_iw_away",
-    "odds_pinnacle_home",
-    "odds_pinnacle_draw",
-    "odds_pinnacle_away",
-    "max_odds_home",
-    "max_odds_draw",
-    "max_odds_away",
-]
+_CIBLES_REQUISES: frozenset[str] = frozenset(RESULT_COLUMNS[source] for source in COLONNES_REQUISES)
+
+# Colonnes de cotes que le projet choisit de ne pas lire, et pourquoi. Les
+# nommer explicitement est la contrepartie de :func:`cotes_ignorees` : sans
+# cette liste, elle crierait à chaque fichier et on cesserait de l'écouter.
+COTES_ECARTEES_MOTIFS: dict[str, str] = {
+    "AH": "handicap asiatique — marché de Phase 2, désactivé",
+    "BF": "Betfair Exchange — cotes de bourse, commission non modélisée",
+}
+
+# Bookmakers individuels que `Max` et `Avg` résument déjà. Les lire un par un
+# n'améliorerait pas le meilleur prix — `Max` est par définition le maximum du
+# marché — et ce sont tous des opérateurs grand public, à marge large : aucun
+# ne remporterait le concours de marge minimale que Pinnacle, déjà lu, gagne
+# presque toujours.
+#
+# Les importer coûterait environ deux millions de lignes de cotes sur le corpus
+# complet, pour une information nulle. Ils sont donc écartés **explicitement** :
+# c'est une décision, pas un oubli, et `cotes_ignorees` le vérifie.
+BOOKMAKERS_RESUMES: frozenset[str] = frozenset(
+    {
+        "VC",  # VC Bet
+        "WH",  # William Hill
+        "LB",  # Ladbrokes
+        "SJ",  # Stan James
+        "SB",  # Sportingbet
+        "GB",  # Gamebookers
+        "BS",  # Blue Square
+        "SY",  # Stanleybet
+        "SO",  # Sporting Odds
+        "1XB",  # 1xBet
+        "BMGM",  # BetMGM
+        "BV",  # BetVictor
+        "CL",  # Coral
+        "PP",  # Paddy Power
+        "SKB",  # Skybet
+    }
+)
+
+# Colonnes numériques à convertir.
+#
+# Dérivée de RESULT_COLUMNS plutôt que tenue à la main : la liste parallèle
+# oubliait systématiquement les colonnes nouvellement ajoutées — aucune cote
+# Over/Under n'y figurait, ni les agrégats de clôture. Une colonne restée en
+# type `object` compare mal, et `val > 0` lève alors sur une chaîne.
+NUMERIC_COLUMNS: list[str] = sorted(
+    {
+        cible
+        for cible in RESULT_COLUMNS.values()
+        if cible.startswith(("odds_", "max_odds_", "avg_odds_"))
+    }
+    | {
+        "home_shots",
+        "away_shots",
+        "home_shots_on_target",
+        "away_shots_on_target",
+        "home_corners",
+        "away_corners",
+        "home_fouls",
+        "away_fouls",
+        "home_yellow",
+        "away_yellow",
+        "home_red",
+        "away_red",
+        "home_goals",
+        "away_goals",
+        "home_ht_goals",
+        "away_ht_goals",
+    }
+)
 
 # Colonnes entières (buts, cartons, etc.)
 INTEGER_COLUMNS = [
@@ -163,20 +258,73 @@ INTEGER_COLUMNS = [
 def inspecter_colonnes(colonnes_presentes) -> dict[str, list[str]]:
     """Comparer les colonnes d'un fichier à celles que le parseur sait lire.
 
-    Le format de Football-Data.co.uk change au fil des saisons : des
-    bookmakers apparaissent, d'autres disparaissent, des colonnes sont
-    renommées. Sans contrôle, une colonne qui disparaît est simplement ignorée
-    et la variable qu'elle alimentait devient silencieusement vide.
+    Le format de Football-Data.co.uk change au fil des saisons : des bookmakers
+    apparaissent, d'autres disparaissent, des colonnes sont renommées. Sans
+    contrôle, une colonne qui disparaît est simplement ignorée et la variable
+    qu'elle alimentait devient silencieusement vide.
+
+    Deux raisonnements distincts, et c'est leur confusion qui avait laissé
+    passer le défaut des colonnes Betbrain :
+
+    - une **grandeur** manque quand *aucune* de ses graphies n'est présente.
+      `MaxH` absente n'est pas une perte si `BbMxH` est là : c'est le même
+      chiffre sous l'autre nom. Signaler l'une ou l'autre comme manquante
+      noierait les vraies disparitions sous le bruit des changements d'époque ;
+    - une **colonne de cotes présente dans le fichier et lue par personne** est
+      une perte sèche, et c'est le cas que rien ne surveillait. Elle est
+      désormais remontée sous ``cotes_ignorees``.
 
     Returns:
-        ``{"manquantes_requises": [...], "manquantes_tolerees": [...]}``, listes
-        triées pour un rapport reproductible.
+        ``{"manquantes_requises", "manquantes_tolerees", "cotes_ignorees"}``,
+        listes triées pour un rapport reproductible.
     """
     presentes = {str(c).strip() for c in colonnes_presentes}
+    familles = familles_de_colonnes()
+
+    # Une grandeur ne manque que si aucune de ses graphies n'est là.
+    manquantes = sorted(
+        graphies[0]
+        for cible, graphies in familles.items()
+        if cible not in _CIBLES_REQUISES and not (set(graphies) & presentes)
+    )
+
     return {
         "manquantes_requises": sorted(set(COLONNES_REQUISES) - presentes),
-        "manquantes_tolerees": sorted(COLONNES_TOLEREES - presentes),
+        "manquantes_tolerees": manquantes,
+        "cotes_ignorees": sorted(cotes_ignorees(presentes)),
     }
+
+
+def cotes_ignorees(colonnes_presentes) -> set[str]:
+    """Colonnes de cotes présentes dans le fichier et lues par personne.
+
+    C'est le contrôle qui manquait. Les colonnes Betbrain étaient remplies à
+    100 % sur trois saisons, et aucun signal ne disait qu'elles partaient à la
+    poubelle : l'inspection ne regardait que ce qui manquait, jamais ce qui
+    était offert et laissé de côté.
+
+    Une colonne est tenue pour une cote si son nom porte une ligne de but
+    (``>2.5``) ou se termine par ``H``/``D``/``A`` après un préfixe de
+    bookmaker — heuristique volontairement large : mieux vaut un faux positif
+    à écarter explicitement qu'une cote perdue en silence.
+    """
+    presentes = {str(c).strip() for c in colonnes_presentes}
+    inconnues = presentes - set(RESULT_COLUMNS)
+
+    def ecartee(colonne: str) -> bool:
+        if any(motif in colonne for motif in COTES_ECARTEES_MOTIFS):
+            return True
+        # Préfixe de bookmaker résumé par Max/Avg, éventuellement suivi du `C`
+        # de clôture : VCH, WHD, VCCA…
+        for prefixe in BOOKMAKERS_RESUMES:
+            if colonne.startswith(prefixe):
+                return True
+        return False
+
+    def ressemble_a_une_cote(colonne: str) -> bool:
+        return ">" in colonne or "<" in colonne or colonne[-1:] in ("H", "D", "A")
+
+    return {c for c in inconnues if ressemble_a_une_cote(c) and not ecartee(c)}
 
 
 def parse_csv(file_path: Path) -> pd.DataFrame:

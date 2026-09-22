@@ -45,6 +45,13 @@ from models.market_assembly import GROUPES_EXCLUSIFS
 GROUPES_DE_MARCHE = GROUPES_EXCLUSIFS
 
 
+# Lignes de cotes qui ne sont pas des bookmakers mais des résumés du marché :
+# `Max` la meilleure cote publiée, `Avg` la moyenne. Elles alimentent le prix
+# obtenu et sont écartées du calcul de la probabilité de marché — voir
+# :func:`probabilites_de_marche`.
+AGREGATS_DE_MARCHE: frozenset[str] = frozenset({"Max", "Max_close", "Avg", "Avg_close"})
+
+
 def _cotes_du_match(session, match_id: int, *, closing: bool) -> list[OddsSnapshot]:
     return (
         session.query(OddsSnapshot)
@@ -76,10 +83,24 @@ def probabilites_de_marche(cotes: list[OddsSnapshot]) -> dict[tuple[str, str], f
     bookmaker à la plus faible marge — le mieux informé — puis on normalise ses
     probabilités brutes. Un groupe incomplet est ignoré : sans toutes les
     issues, la marge n'est pas mesurable et la normalisation serait fausse.
+
+    Les **agrégats de marché sont exclus** (:data:`AGREGATS_DE_MARCHE`), et
+    c'est essentiel. `Max` est le maximum de chaque cote prise séparément : sa
+    marge est minimale par construction, souvent inférieure à 1 — un carnet qui
+    n'existe chez personne. Il remporterait donc systématiquement le concours
+    de marge minimale, et l'edge de **tous** les paris serait calculé contre un
+    marché plus affûté que le vrai. L'edge rétrécirait partout, sans qu'aucune
+    erreur ne se manifeste.
+
+    `Max` sert au prix obtenu (:func:`meilleures_cotes`), jamais à l'opinion du
+    marché. C'est la distinction que le cahier des charges pose entre
+    ``offered_odds`` et ``p_marché``, et elle tient précisément ici.
     """
     par_bookmaker: dict[tuple[str, str, str], float] = {}
     for cote in cotes:
         if cote.odds is None or cote.odds <= 1.0:
+            continue
+        if cote.bookmaker in AGREGATS_DE_MARCHE:
             continue
         par_bookmaker[(cote.bookmaker, cote.market, cote.selection)] = float(cote.odds)
 

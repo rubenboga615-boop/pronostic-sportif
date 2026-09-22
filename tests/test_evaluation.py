@@ -422,6 +422,73 @@ class TestBacktest:
         assert "erreur" in run_backtest(pd.DataFrame())
 
 
+class TestAgregatsDeMarche:
+    """`Max` donne le prix obtenu, jamais l'opinion du marché.
+
+    C'est la distinction la plus fragile du module de valorisation, et la seule
+    qui puisse fausser tous les edges d'un coup sans lever la moindre erreur.
+
+    `Max` est le maximum de chaque cote prise séparément : la somme de ses
+    probabilités implicites est inférieure à celle de n'importe quel bookmaker
+    réel, souvent inférieure à 1. Retenu comme « bookmaker à la plus faible
+    marge », il gagnerait à chaque match, et l'edge serait calculé contre un
+    marché plus affûté que le vrai.
+    """
+
+    @staticmethod
+    def _cotes():
+        """Deux bookmakers réels, plus l'agrégat Max qui les domine."""
+        return [
+            OddsSnapshot(bookmaker="B365", market="1N2", selection="home", odds=2.00),
+            OddsSnapshot(bookmaker="B365", market="1N2", selection="draw", odds=3.40),
+            OddsSnapshot(bookmaker="B365", market="1N2", selection="away", odds=3.80),
+            OddsSnapshot(bookmaker="PS", market="1N2", selection="home", odds=2.05),
+            OddsSnapshot(bookmaker="PS", market="1N2", selection="draw", odds=3.50),
+            OddsSnapshot(bookmaker="PS", market="1N2", selection="away", odds=3.90),
+            # L'agrégat : le meilleur de chaque colonne, donc jamais offert
+            # d'un seul tenant par personne.
+            OddsSnapshot(bookmaker="Max", market="1N2", selection="home", odds=2.10),
+            OddsSnapshot(bookmaker="Max", market="1N2", selection="draw", odds=3.55),
+            OddsSnapshot(bookmaker="Max", market="1N2", selection="away", odds=4.00),
+        ]
+
+    def test_la_marge_de_l_agregat_est_plus_faible_que_celle_des_vrais(self):
+        """La prémisse du piège, vérifiée plutôt que supposée."""
+        marges = {}
+        for book in ("B365", "PS", "Max"):
+            marges[book] = sum(1 / c.odds for c in self._cotes() if c.bookmaker == book)
+
+        assert marges["Max"] < marges["PS"] < marges["B365"]
+
+    def test_le_prix_obtenu_retient_l_agregat(self):
+        """C'est bien le meilleur prix du marché qu'un parieur obtiendrait."""
+        prix = meilleures_cotes(self._cotes())
+
+        assert prix[("1N2", "home")] == pytest.approx(2.10)
+
+    def test_la_probabilite_de_marche_l_ignore(self):
+        """Sans cette exclusion, l'edge rétrécirait sur tous les paris."""
+        avec = probabilites_de_marche(self._cotes())
+        sans_agregat = probabilites_de_marche([c for c in self._cotes() if c.bookmaker != "Max"])
+
+        assert avec == pytest.approx(sans_agregat)
+
+    def test_les_probabilites_somment_toujours_a_un(self):
+        probas = probabilites_de_marche(self._cotes())
+
+        total = sum(p for (marche, _), p in probas.items() if marche == "1N2")
+        assert total == pytest.approx(1.0)
+
+    def test_un_marche_sans_bookmaker_reel_ne_produit_rien(self):
+        """Mieux vaut pas de probabilité qu'une probabilité issue d'un carnet
+        qui n'existe chez personne."""
+        agregat_seul = [c for c in self._cotes() if c.bookmaker == "Max"]
+
+        assert probabilites_de_marche(agregat_seul) == {}
+        # Le prix, lui, reste connu.
+        assert meilleures_cotes(agregat_seul)[("1N2", "home")] == pytest.approx(2.10)
+
+
 class TestAucParGroupe:
     """Une AUC ne se compare pas d'un marché à l'autre.
 
