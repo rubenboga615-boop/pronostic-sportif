@@ -28,7 +28,7 @@ Usage :
     python scripts/completer_cotes.py --simuler          # ne rien écrire
     python scripts/completer_cotes.py                    # les 5 championnats
     python scripts/completer_cotes.py --leagues E0 SP1
-    python scripts/completer_cotes.py --racine data/raw/football-data
+    python scripts/completer_cotes.py --racine chemin/vers/les/csv
 """
 
 import argparse
@@ -42,7 +42,18 @@ from loguru import logger
 from collectors.football_data.league_config import LEAGUE_CONFIG, get_league_name
 from pipelines.completer_cotes import completer_cotes
 
-RACINE_PAR_DEFAUT = Path("data/raw/football-data")
+# Deux arborescences coexistent, selon l'outil qui a téléchargé :
+#
+#   data/raw/football_data/<CODE>/<CODE>_<SAISON>.csv   ← téléchargeur du projet
+#   data/raw/football-data/<SAISON>/<CODE>.csv          ← scripts de récupération
+#
+# Le tiret bas et le tiret haut se ressemblent assez pour qu'on s'y trompe, et
+# assez peu pour que le dossier reste introuvable. Le script essaie donc les
+# deux plutôt que d'exiger qu'on sache laquelle on a.
+RACINES_CANDIDATES: tuple[Path, ...] = (
+    Path("data/raw/football_data"),
+    Path("data/raw/football-data"),
+)
 
 
 def fichiers_du_championnat(racine: Path, code: str) -> list[Path]:
@@ -57,6 +68,42 @@ def fichiers_du_championnat(racine: Path, code: str) -> list[Path]:
     return par_saison or par_code
 
 
+def trouver_racine(explicite: Path | None) -> Path:
+    """Dossier des CSV : celui demandé, ou la première arborescence trouvée.
+
+    Une racine explicite est utilisée telle quelle, même vide — l'utilisateur
+    sait ce qu'il fait, et un repli silencieux masquerait sa faute de frappe.
+
+    Raises:
+        SystemExit: aucune arborescence trouvée. Le message dit ce qui a été
+            cherché et ce que `data/raw/` contient réellement : une erreur qui
+            n'indique pas la sortie oblige à relire le code.
+    """
+    if explicite is not None:
+        if not explicite.exists():
+            raise SystemExit(f"Dossier introuvable : {explicite.resolve()}")
+        return explicite
+
+    for candidate in RACINES_CANDIDATES:
+        if candidate.exists() and any(candidate.rglob("*.csv")):
+            logger.info(f"Arborescence trouvée : {candidate}")
+            return candidate
+
+    cherchees = "\n  ".join(str(c.resolve()) for c in RACINES_CANDIDATES)
+    racine = Path("data/raw")
+    if racine.exists():
+        contenu = sorted(p.name for p in racine.iterdir())
+        detail = f"`data/raw/` contient : {contenu or 'rien'}"
+    else:
+        detail = "`data/raw/` n'existe pas."
+    raise SystemExit(
+        f"Aucun CSV Football-Data trouvé. Cherché dans :\n  {cherchees}\n"
+        f"{detail}\n"
+        f"Indiquez le bon dossier avec --racine, ou lancez d'abord "
+        f"scripts/import_historical_data.py pour télécharger les fichiers."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -66,7 +113,12 @@ def main() -> int:
         metavar="CODE",
         help=f"codes à traiter (défaut : {' '.join(sorted(LEAGUE_CONFIG))})",
     )
-    parser.add_argument("--racine", type=Path, default=RACINE_PAR_DEFAUT)
+    parser.add_argument(
+        "--racine",
+        type=Path,
+        default=None,
+        help="dossier des CSV (détecté automatiquement si omis)",
+    )
     parser.add_argument(
         "--simuler",
         action="store_true",
@@ -80,17 +132,16 @@ def main() -> int:
             f"Championnats hors périmètre : {inconnus}. Attendu : {sorted(LEAGUE_CONFIG)}"
         )
 
-    if not args.racine.exists():
-        raise SystemExit(f"Dossier introuvable : {args.racine.resolve()}")
+    racine = trouver_racine(args.racine)
 
     if args.simuler:
         logger.info("SIMULATION — aucune écriture ne sera faite")
 
     totaux = {"ajoutees": 0, "deja": 0, "introuvables": 0, "fichiers": 0}
     for code in args.leagues:
-        fichiers = fichiers_du_championnat(args.racine, code)
+        fichiers = fichiers_du_championnat(racine, code)
         if not fichiers:
-            logger.warning(f"{code} : aucun fichier sous {args.racine}")
+            logger.warning(f"{code} : aucun fichier sous {racine}")
             continue
 
         logger.info(f"=== {code} — {get_league_name(code)} — {len(fichiers)} fichiers ===")

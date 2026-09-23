@@ -311,3 +311,76 @@ class TestIdempotenceDeLImport:
 
         # Et la relance ne crée rien.
         assert completer_cotes([csv], "E0")["cotes_ajoutees"] == 0
+
+
+class TestDetectionDeLArborescence:
+    """Deux arborescences coexistent, et le script doit trouver les deux.
+
+    Le téléchargeur du projet écrit sous `football_data` (tiret bas), les
+    scripts de récupération sous `football-data` (tiret haut). Les deux noms se
+    ressemblent assez pour qu'on s'y trompe, et assez peu pour que le dossier
+    reste introuvable — ce qui est arrivé dès la première exécution réelle.
+    """
+
+    @staticmethod
+    def _script():
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+        import completer_cotes as module
+
+        return module
+
+    def test_l_arborescence_du_telechargeur_est_trouvee(self, tmp_path, monkeypatch):
+        module = self._script()
+        monkeypatch.chdir(tmp_path)
+        cible = tmp_path / "data/raw/football_data/E0"
+        cible.mkdir(parents=True)
+        (cible / "E0_2425.csv").write_text("Div,Date\n", encoding="utf-8")
+
+        assert module.trouver_racine(None).name == "football_data"
+
+    def test_l_arborescence_des_scripts_est_trouvee(self, tmp_path, monkeypatch):
+        module = self._script()
+        monkeypatch.chdir(tmp_path)
+        cible = tmp_path / "data/raw/football-data/2425"
+        cible.mkdir(parents=True)
+        (cible / "E0.csv").write_text("Div,Date\n", encoding="utf-8")
+
+        assert module.trouver_racine(None).name == "football-data"
+
+    def test_un_dossier_present_mais_vide_ne_compte_pas(self, tmp_path, monkeypatch):
+        """Un dossier créé puis jamais rempli ne doit pas passer pour la source."""
+        module = self._script()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "data/raw/football_data").mkdir(parents=True)
+
+        with pytest.raises(SystemExit):
+            module.trouver_racine(None)
+
+    def test_une_racine_explicite_est_respectee_meme_vide(self, tmp_path, monkeypatch):
+        """Un repli silencieux masquerait la faute de frappe de l'utilisateur."""
+        module = self._script()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "data/raw/football_data/E0").mkdir(parents=True)
+        (tmp_path / "data/raw/football_data/E0/E0_2425.csv").write_text("x", encoding="utf-8")
+        ailleurs = tmp_path / "ailleurs"
+        ailleurs.mkdir()
+
+        assert module.trouver_racine(ailleurs) == ailleurs
+
+    def test_l_erreur_dit_ou_elle_a_cherche(self, tmp_path, monkeypatch):
+        """Une erreur qui n'indique pas la sortie oblige à relire le code."""
+        module = self._script()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "data/raw").mkdir(parents=True)
+        (tmp_path / "data/raw/understat").mkdir()
+
+        with pytest.raises(SystemExit) as excinfo:
+            module.trouver_racine(None)
+
+        message = str(excinfo.value)
+        assert "football_data" in message and "football-data" in message
+        assert "understat" in message  # ce qui est réellement là
+        assert "--racine" in message  # la sortie
